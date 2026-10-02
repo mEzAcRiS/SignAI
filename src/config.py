@@ -108,3 +108,27 @@ MLP_PARAMS: dict = {
     "max_iter": 800,
     "random_state": RANDOM_STATE,
 }
+
+# ---------------------------------------------------------------------------
+# Reconocimiento de movimiento para J y Z (letras con trazo en LSM)
+# ---------------------------------------------------------------------------
+# Letras que requieren analisis de trayectoria
+MOTION_CLASSES: list[str] = ["J", "Z"]
+
+# Landmark de la punta del dedo relevante para cada letra con movimiento
+# J -> menique (landmark 20), Z -> indice (landmark 8)
+MOTION_FINGER_TIP: dict[str, int] = {"J": 20, "Z": 8}
+
+# Tamaño del buffer de frames para capturar la trayectoria
+MOTION_BUFFER_SIZE = 20
+MOTION_MIN_FRAMES = 10  # minimo frames para features validos
+
+# Numero de features de trayectoria extraidas
+MOTION_NUM_FEATURES = 20
+
+# Rutas del modelo y dataset de movimiento
+MOTION_DATASET_PATH = DATA_DIR / "motion_landmarks.csv"
+MOTION_MODEL_PATH = MODELS_DIR / "motion_model.joblib"
+
+# Modelo de movimiento por defecto
+MOTION_MODEL_TYPE = "svm"  # "svm" o "rf"

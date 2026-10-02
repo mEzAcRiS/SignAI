@@ -10,10 +10,17 @@ setlocal
 set PY=.venv\Scripts\python.exe
 if not exist "%PY%" set PY=python
 
-echo [1/3] Verificando modelo entrenado...
+echo [1/3] Verificando modelo entrenado (estatico)...
 if not exist "models\model.joblib" (
     echo      No existe models\model.joblib. Entrenando con datos de prueba...
     %PY% src\train.py --data data\samples\hand_landmarks_sample.csv || goto :error
+)
+
+echo [1b/3] Verificando modelo de movimiento (J/Z) [opcional]...
+if not exist "models\motion_model.joblib" (
+    echo      No existe models\motion_model.joblib (opcional). J/Z usaran solo postura estatica.
+) else (
+    echo      Modelo de movimiento encontrado.
 )
 
 echo [2/3] Verificando modelo de landmarks...
@@ -30,6 +37,7 @@ echo [3/3] Construyendo el ejecutable...
     --collect-all sklearn ^
     --add-data "models\hand_landmarker.task;models" ^
     --add-data "models\model.joblib;models" ^
+    --add-data "models\motion_model.joblib;models" ^
     --add-data "data\samples;data\samples" ^
     --paths src ^
     src\app.py || goto :error

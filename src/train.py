@@ -1,6 +1,6 @@
 """Entrenamiento y comparacion de clasificadores para el abecedario LSM (A-Z).
 
-Flujo:
+Flujo (clasificador estatico):
     1. Carga y valida el dataset de 63 caracteristicas.
     2. Divide en entrenamiento/prueba (estratificado 80/20).
     3. Compara tres modelos con validacion cruzada de 5 pliegues:
@@ -10,10 +10,15 @@ Flujo:
     4. Entrena el modelo final (Random Forest por defecto) y lo guarda
        en ``models/model.joblib`` junto con las metricas.
 
+Flujo (clasificador de movimiento para J/Z):
+    python src/train.py --motion               # entrena modelo de trazo
+    python src/train.py --motion --motion-model rf  # con Random Forest
+
 Uso:
-    python src/train.py                        # dataset completo
+    python src/train.py                        # dataset completo (estatico)
     python src/train.py --data data/samples/hand_landmarks_sample.csv
     python src/train.py --model best           # elige el mejor por CV
+    python src/train.py --motion               # entrena modelo de movimiento J/Z
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ from sklearn.svm import SVC
 
 import config
 from dataset import DatasetError, load_dataset, split_xy
+from motion import train_motion_model, load_motion_classifier
 
 
 # ----------------------------------------------------------------------
@@ -312,7 +318,37 @@ def main(argv: list[str] | None = None) -> int:
         "--out", default=str(config.MODEL_CLASSIFIER_PATH),
         help="Ruta de salida del modelo (.joblib)",
     )
+    parser.add_argument(
+        "--motion", action="store_true",
+        help="Entrenar el clasificador de movimiento para J y Z (usa data/motion_landmarks.csv)",
+    )
+    parser.add_argument(
+        "--motion-model", choices=["svm", "rf"], default="svm",
+        help="Tipo de modelo para movimiento (por defecto svm)",
+    )
+    parser.add_argument(
+        "--motion-out", default=str(config.MOTION_MODEL_PATH),
+        help="Ruta de salida del modelo de movimiento (.joblib)",
+    )
     args = parser.parse_args(argv)
+
+    if args.motion:
+        # Entrenar modelo de movimiento
+        data_path = Path(config.MOTION_DATASET_PATH)
+        if not data_path.exists():
+            print(f"ERROR: no existe el dataset de movimiento '{data_path}'.")
+            print("Primero captura datos de movimiento con: python src/collect_data.py --person Nombre --motion")
+            return 1
+        try:
+            train_motion_model(
+                data_path=data_path,
+                model_choice=args.motion_model,
+                out_path=args.motion_out,
+            )
+        except Exception as exc:
+            print(f"ERROR de dataset de movimiento: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     data_path = Path(args.data)
     # Si falta el dataset real, se usan automaticamente los datos de prueba

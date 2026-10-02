@@ -1,16 +1,18 @@
 # SignAI — Reconocimiento del abecedario LSM (A–Z) con visión por computadora
 
-Prototipo de reconocimiento de **señas estáticas del abecedario de la Lengua
+Prototipo de reconocimiento de **señas del abecedario de la Lengua
 de Señas Mexicana (dactilología A–Z, 26 letras) en tiempo real**. La cámara
 captura la mano, **MediaPipe** extrae 21 puntos clave (landmarks), se forma un
 vector de **63 coordenadas (x, y, z)** y un **Random Forest** clasifica la
 seña, mostrando el resultado en pantalla con las 3 opciones más probables,
 confianza y esqueleto dibujado.
 
-> **Limitación documentada:** las letras **J** y **Z** requieren movimiento
-> (trazo en el aire). El sistema captura la postura estática de ambas: si se
-> forman como se indica en `docs/abecedario_lsm.md` se reconocen, pero el
-> movimiento del trazo no se modela.
+> **Reconocimiento híbrido para J y Z:** Las letras **J** y **Z** en LSM
+> requieren un movimiento (trazo en el aire). El sistema implementa un
+> **clasificador de segundo nivel** que analiza la trayectoria del dedo
+> relevante (menique para J, índice para Z) a lo largo de ~20 frames para
+> distinguir J de I y Z de otras letras con índice estirado. Ver
+> `docs/abecedario_lsm.md` para la guía de captura de movimiento.
 
 | | |
 |---|---|
@@ -108,6 +110,7 @@ Teclas: **ESC** salir · **P** pausa · **S** guardar captura.
 
 ### 4.4 Recolección de datos con cámara (cada integrante)
 
+**Modo estático (posturas A–Z):**
 ```powershell
 .\.venv\Scripts\python.exe src\collect_data.py --person Alan --per-class 150
 ```
@@ -115,13 +118,43 @@ Teclas: **ESC** salir · **P** pausa · **S** guardar captura.
 Teclas: **A–Z** elegir letra (se muestra cómo formarla en pantalla) ·
 **ESPACIO** capturar · **0** captura automática
 · **ESC** guardar y salir. Cada integrante genera `data/collected/<nombre>.csv`
-y al final se unen todos:
 
+**Modo movimiento (trazos J y Z):**
 ```powershell
-.\.venv\Scripts\python.exe src\collect_data.py --merge
+.\.venv\Scripts\python.exe src\collect_data.py --person Alan --motion
 ```
 
-### 4.5 Ejecutable sin Python (`.exe`)
+Teclas: **J/Z** seleccionar letra · **ESPACIO** iniciar/parar captura de trazo
+· **M** cancelar trazo actual · **ESC** salir.
+Cada integrante genera `data/collected/<nombre>_motion.csv` con ~30-50 secuencias por letra.
+
+Unión de todos los CSV:
+```powershell
+# Dataset estático (posturas)
+.\.venv\Scripts\python.exe src\collect_data.py --merge
+
+# Dataset de movimiento (trazos J/Z)
+# Se unen automáticamente al entrenar con --motion
+```
+
+### 4.5 Entrenamiento
+
+**Modelo estático (A–Z):**
+```powershell
+.\.venv\Scripts\python.exe src\train.py
+```
+
+**Modelo de movimiento (J/Z):**
+```powershell
+.\.venv\Scripts\python.exe src\train.py --motion
+# O con Random Forest:
+.\.venv\Scripts\python.exe src\train.py --motion --motion-model rf
+```
+
+El modelo de movimiento se guarda en `models/motion_model.joblib` y se usa
+automáticamente por la app en tiempo real cuando detecta candidatas I/J/Z.
+
+### 4.6 Ejecutable sin Python (`.exe`)
 
 ```powershell
 scripts\build_exe.bat
@@ -140,21 +173,24 @@ SignAI/
 │   ├── letters.py             # texto y pista de cada letra del abecedario
 │   ├── hand_detector.py       # MediaPipe → 21 landmarks → 63 valores
 │   ├── dataset.py             # lectura/validación/merge de CSV
-│   ├── collect_data.py        # recolección con cámara
-│   ├── train.py               # RF + SVM + MLP, validación cruzada
+│   ├── collect_data.py        # recolección con cámara (estática + movimiento)
+│   ├── train.py               # RF + SVM + MLP + clasificador de movimiento
 │   ├── predict.py             # predicción por imagen/video/CSV
-│   └── app.py                 # aplicación en tiempo real
+│   ├── app.py                 # aplicación en tiempo real (híbrida estática+movimiento)
+│   └── motion.py              # NUEVO: buffer, features y clasificador de trazo J/Z
 ├── scripts/
 │   ├── download_model.py      # descarga el modelo de landmarks
 │   ├── make_sample_data.py    # regenera los datos de prueba
-│   └── build_exe.bat          # construye el .exe
-├── tests/                     # 36 pruebas automatizadas (pytest)
-├── models/                    # hand_landmarker.task + model.joblib
+│   └── build_exe.bat          # construye el .exe (incluye motion_model.joblib)
+├── tests/                     # 56 pruebas automatizadas (pytest)
+│   ├── test_motion.py         # NUEVO: tests del módulo de movimiento
+│   └── ...
+├── models/                    # hand_landmarker.task + model.joblib + motion_model.joblib
 ├── data/
 │   ├── samples/               # datos de prueba + imagen de prueba
-│   └── collected/             # CSV por integrante (se genera)
+│   └── collected/             # CSV por integrante (estático + _motion.csv)
 └── docs/
-    ├── abecedario_lsm.md      # cómo formar cada letra (guía de captura)
+    ├── abecedario_lsm.md      # cómo formar cada letra (guía de captura + movimiento)
     └── ...                    # capturas y matriz de confusión
 ```
 
@@ -164,8 +200,10 @@ SignAI/
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Cobertura: normalización de landmarks, validación del dataset, entrenamiento,
-predicción, suavizado de la app y modos sin cámara.
+**56 pruebas** (36 originales + 20 nuevas de movimiento):
+- Normalización de landmarks, validación del dataset, entrenamiento estático
+- Predicción, suavizado de la app y modos sin cámara
+- **NUEVO:** MotionBuffer, extracción de features de trayectoria, MotionClassifier (SVM/RF), dataset de movimiento, integración con app
 
 ## 7. Créditos y licencias de las dependencias
 

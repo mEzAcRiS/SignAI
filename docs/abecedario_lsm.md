@@ -5,11 +5,16 @@ Mexicana (LSM). Este documento indica cómo formar cada letra para capturar
 muestras con `src/collect_data.py` y para realizar las señas frente a la
 cámara en tiempo real.
 
-> **Limitación importante (J y Z):** en la LSM, las letras **J** y **Z** se
-> completan con un movimiento (trazo con la letra). El sistema de visión de
-> este prototipo clasifica un fotograma estático, por lo que captura la
-> **postura base** de ambas letras: el trazo no se modela. Se documenta aquí
-> y en el README como limitación conocida del proyecto.
+> **Reconocimiento híbrido para J y Z:** en la LSM, las letras **J** y **Z**
+> se completan con un movimiento (trazo en el aire). Este prototipo implementa
+> un **clasificador de segundo nivel (híbrido)**:
+> 1. **Clasificador estático** (Random Forest): detecta la postura base en cada frame
+> 2. **Clasificador de movimiento** (SVM): cuando la postura coincide con I/J/Z,
+>    analiza la trayectoria del dedo relevante (meñique=J, índice=Z) sobre
+>    ~20 frames consecutivos para decidir si es J o Z
+>
+> **Para capturar datos de movimiento:** usa `python src/collect_data.py --person Nombre --motion`
+> y sigue las instrucciones de trazo abajo. Se recomiendan ~30-50 secuencias por letra.
 
 **Postura general de la mano**
 
@@ -22,7 +27,7 @@ cámara en tiempo real.
 
 ## Letras A–Z
 
-| Letra | Cómo formarla |
+| Letra | Cómo formarla (postura base) |
 |---|---|
 | **A** | Puño cerrado con el pulgar al lado del índice (punta arriba). |
 | **B** | Mano plana, cuatro dedos estirados y juntos, pulgar doblado sobre la palma. |
@@ -33,7 +38,7 @@ cámara en tiempo real.
 | **G** | Índice y pulgar estirados y paralelos, apuntando hacia un lado. |
 | **H** | Índice y medio estirados juntos, apuntando hacia un lado. |
 | **I** | Solo el meñique estirado hacia arriba; los demás doblados. |
-| **J** | Meñique estirado (forma de J); en LSM se completa con movimiento. ⚠️ |
+| **J** | Meñique estirado (postura base); **trazo: gancho hacia adentro con el meñique** 🎯 |
 | **K** | Índice y medio arriba en forma de V, el pulgar en medio de los dos. |
 | **L** | Índice arriba y pulgar hacia afuera, formando una L. |
 | **M** | Índice, medio y anular doblados sobre el pulgar. |
@@ -49,9 +54,9 @@ cámara en tiempo real.
 | **W** | Índice, medio y anular estirados y separados (en forma de W). |
 | **X** | Índice estirado pero enganchado (curvado hacia adentro). |
 | **Y** | Pulgar y meñique estirados; los tres dedos del medio doblados. |
-| **Z** | Índice estirado apuntando; en LSM se completa con movimiento. ⚠️ |
+| **Z** | Índice estirado (postura base); **trazo: zigzag horizontal con el índice** 🎯 |
 
-⚠️ = letra que en la LSM requiere movimiento (ver limitación arriba).
+🎯 = letra con reconocimiento de movimiento (trazo capturado en modo `--motion`).
 
 ## Letras que suelen confundirse
 

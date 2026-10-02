@@ -7,11 +7,15 @@ Uso (en una laptop CON camara):
     python src/collect_data.py --person Alan
     python src/collect_data.py --person Alan --per-class 100 --interval 250
 
-Teclas:
+Teclas (modo estatico):
     A-Z     = seleccionar la letra actual (se muestra como formarla)
     ESPACIO = capturar una muestra
     0       = activar/desactivar captura automatica
     ESC     = guardar y salir
+
+Modo movimiento (para J y Z):
+    python src/collect_data.py --person Alan --motion
+    Teclas: J/Z = seleccionar letra | ESPACIO = iniciar/parar trazo | M = cancelar | ESC = salir
 
 Union de todos los CSV en el dataset final:
     python src/collect_data.py --merge
@@ -30,6 +34,15 @@ import config
 from dataset import DatasetError, append_samples, make_sample_row, merge_csvs
 from hand_detector import HandDetector, draw_hand, draw_label
 from letters import ascii_hint, hint_for
+from motion import (
+    MotionBuffer,
+    MOTION_BUFFER_SIZE,
+    MOTION_MIN_FRAMES,
+    extract_trajectory_features,
+    make_motion_sample_row,
+    save_motion_samples,
+    MOTION_FEATURE_COLUMNS,
+)
 
 
 # ----------------------------------------------------------------------
@@ -163,6 +176,176 @@ def collection_loop(args) -> None:
     print("Siguiente paso: python src/collect_data.py --merge")
 
 
+# ----------------------------------------------------------------------
+# Captura de movimiento para J y Z
+# ----------------------------------------------------------------------
+def motion_collection_loop(args) -> None:
+    """Bucle interactivo de captura de trayectorias para J y Z."""
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{args.person}_motion.csv"
+
+    counts = {label: 0 for label in config.MOTION_CLASSES}
+    current_label = config.MOTION_CLASSES[0]
+    target_per_class = args.per_class
+    frames = 0
+    hands_detected = 0
+
+    print("=" * 60)
+    print(" RECOLECCION DE MOVIMIENTO - SignAI (J y Z)")
+    print("=" * 60)
+    print(f" Persona      : {args.person}")
+    print(f" Salida       : {out_path}")
+    print(f" Meta/letra   : {target_per_class} secuencias")
+    print(" Teclas: J/Z = seleccionar letra | ESPACIO = iniciar captura de trazo")
+    print("       M = cancelar captura actual | ESC = salir")
+    print("=" * 60)
+
+    cap = cv2.VideoCapture(args.camera)
+    if not cap.isOpened():
+        print(
+            f"ERROR: no se pudo abrir la camara #{args.camera}. "
+            "Prueba otro indice con --camera 1.",
+            file=sys.stderr,
+        )
+        return
+
+    detector = HandDetector(running_mode="video")
+    motion_buffer = MotionBuffer(maxlen=MOTION_BUFFER_SIZE)
+
+    # Estado de captura de movimiento
+    capturing_motion = False
+    motion_start_time = 0.0
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                print("ERROR: la camara dejo de entregar fotogramas.", file=sys.stderr)
+                break
+            frames += 1
+            detection = detector.detect(frame, timestamp_ms=int(time.monotonic() * 1000))
+
+            # Agregar al buffer si estamos capturando movimiento
+            if capturing_motion and detection is not None:
+                motion_buffer.add(detection, current_label)
+
+            # Panel de estado
+            if capturing_motion:
+                status = f"CAPTURANDO TRAZO: {current_label}  ({len(motion_buffer._buffer)}/{MOTION_BUFFER_SIZE})"
+                color = (0, 255, 255)  # amarillo
+                sub_text = f"Haz el trazo de {current_label}...  M=cancelar  |  mano: {'OK' if detection else 'NO'}"
+            else:
+                status = f"Letra: {current_label}  ({counts[current_label]}/{target_per_class})"
+                color = (0, 255, 0) if detection is not None else (0, 0, 255)
+                sub_text = f"ESPACIO=iniciar trazo  J/Z=cambiar  |  mano: {'OK' if detection else 'NO'}  |  {args.person}"
+
+            if detection is not None:
+                hands_detected += 1
+                draw_hand(frame, detection)
+                # Dibujar el dedo relevante para la letra actual
+                finger_idx = config.MOTION_FINGER_TIP.get(current_label)
+                if finger_idx is not None:
+                    h, w = frame.shape[:2]
+                    tip = detection.landmarks[finger_idx]
+                    cv2.circle(frame, (int(tip[0] * w), int(tip[1] * h)), 8, (0, 255, 255), -1, cv2.LINE_AA)
+
+            draw_label(frame, status, sub_text, color=color)
+
+            # Mostrar conteo de secuencias capturadas
+            for idx, label in enumerate(config.MOTION_CLASSES):
+                y = 125 + idx * 30
+                highlight = label == current_label
+                text = f"{label}: {counts[label]:>4} / {target_per_class}"
+                cv2.putText(
+                    frame, text, (18, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                    (0, 255, 255) if highlight else (220, 220, 220),
+                    2 if highlight else 1, cv2.LINE_AA,
+                )
+
+            # Pista de como hacer el trazo
+            if current_label == "J":
+                hint = "J: Menique estirado, traza una J en el aire (gancho hacia adentro)"
+            else:
+                hint = "Z: Indice estirado, traza una Z en el aire (zigzag horizontal)"
+            cv2.rectangle(frame, (8, 424), (frame.shape[1] - 8, 472), (20, 20, 20), -1)
+            cv2.putText(
+                frame, hint, (18, 455),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 220, 255), 1, cv2.LINE_AA,
+            )
+
+            cv2.imshow("SignAI - recoleccion de movimiento (J/Z)", frame)
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == 27:  # ESC
+                break
+
+            if key in (ord("j"), ord("J")):
+                current_label = "J"
+                print(f"  letra {current_label}: trazo de J (gancho con menique)")
+            elif key in (ord("z"), ord("Z")):
+                current_label = "Z"
+                print(f"  letra {current_label}: trazo de Z (zigzag con indice)")
+
+            if key == ord(" "):  # ESPACIO - iniciar/parar captura de trazo
+                if not capturing_motion:
+                    if detection is None:
+                        print("  no se detecto mano; acerca la mano a la camara")
+                    else:
+                        capturing_motion = True
+                        motion_buffer.clear()
+                        motion_start_time = time.perf_counter()
+                        print(f"  >>> INICIANDO captura de trazo para {current_label} <<<")
+                else:
+                    # Parar captura y guardar si hay suficientes frames
+                    capturing_motion = False
+                    duration = time.perf_counter() - motion_start_time
+                    if motion_buffer.is_ready(MOTION_MIN_FRAMES):
+                        seq = motion_buffer.get_sequence()
+                        features = extract_trajectory_features(seq)
+                        row = make_motion_sample_row(features, current_label, person=args.person)
+                        save_motion_samples(row, out_path)
+                        counts[current_label] += 1
+                        print(f"  >>> Trazo de {current_label} guardado ({counts[current_label]}/{target_per_class}) duracion: {duration:.2f}s <<<")
+                    else:
+                        print(f"  trazo muy corto ({len(motion_buffer._buffer)} frames), descartado (min {MOTION_MIN_FRAMES})")
+                    motion_buffer.clear()
+
+            elif key == ord("m") or key == ord("M"):  # M - cancelar captura actual
+                if capturing_motion:
+                    capturing_motion = False
+                    motion_buffer.clear()
+                    print("  captura de trazo cancelada")
+
+            # Auto-guardar si el buffer se llena
+            if capturing_motion and len(motion_buffer._buffer) >= MOTION_BUFFER_SIZE:
+                capturing_motion = False
+                seq = motion_buffer.get_sequence()
+                features = extract_trajectory_features(seq)
+                row = make_motion_sample_row(features, current_label, person=args.person)
+                save_motion_samples(row, out_path)
+                counts[current_label] += 1
+                print(f"  >>> Buffer lleno - trazo de {current_label} guardado auto ({counts[current_label]}/{target_per_class}) <<<")
+                motion_buffer.clear()
+
+            if all(counts[label] >= target_per_class for label in config.MOTION_CLASSES):
+                print("  meta alcanzada para J y Z. Pulsa ESC para guardar.")
+                # No auto=False aqui porque no hay modo auto en movimiento
+
+    finally:
+        detector.close()
+        cap.release()
+        cv2.destroyAllWindows()
+
+    print()
+    print("Resumen de la sesion de movimiento:")
+    for label in config.MOTION_CLASSES:
+        print(f"  letra {label}: {counts[label]} secuencias")
+    print(f"  total: {sum(counts.values())} secuencias en {out_path}")
+    print(f"  (fotogramas totales: {frames}, con mano: {hands_detected})")
+    print("Siguiente paso: python src/train.py --motion")
+
+
 def _capture(detection, label: str, person: str, out_path: Path, counts: dict) -> None:
     """Guarda una muestra en el CSV de la persona."""
     row = make_sample_row(
@@ -205,11 +388,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(config.DATA_DIR / "collected"), help="carpeta de salida")
     parser.add_argument("--merge", action="store_true", help="unir todos los CSV y salir")
     parser.add_argument("--output", default=str(config.DATASET_PATH), help="destino del --merge")
+    parser.add_argument("--motion", action="store_true", help="modo captura de movimiento para J y Z")
     args = parser.parse_args(argv)
 
     try:
         if args.merge:
             return do_merge(args.out, args.output)
+        if args.motion:
+            if not args.person:
+                parser.error("falta --person (ej. --person Alan)")
+            motion_collection_loop(args)
+            return 0
         if not args.person:
             parser.error("falta --person (ej. --person Alan)")
         collection_loop(args)

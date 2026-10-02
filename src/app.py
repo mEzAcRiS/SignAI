@@ -31,6 +31,14 @@ import config
 from dataset import DatasetError, load_dataset, split_xy
 from hand_detector import HandDetector, draw_hand, draw_label
 from train import load_classifier, predict_batch, predict_top
+from motion import (
+    MotionBuffer,
+    MotionClassifier,
+    MOTION_BUFFER_SIZE,
+    MOTION_MIN_FRAMES,
+    extract_trajectory_features,
+    load_motion_classifier,
+)
 
 
 # ----------------------------------------------------------------------
@@ -89,6 +97,23 @@ def run_on_frames(
     """Procesa un iterador de fotogramas BGR y muestra/conserva el resultado."""
     smoother = SignSmoother(min_votes=1 if hold else config.MIN_VOTES)
     detector = HandDetector(running_mode="video")
+    
+    # Cargar clasificador de movimiento (opcional)
+    motion_clf: MotionClassifier | None = None
+    try:
+        motion_clf = load_motion_classifier()
+        print(f"Clasificador de movimiento cargado: {motion_clf.model_type.upper()}")
+    except FileNotFoundError:
+        print("Clasificador de movimiento no encontrado (opcional). Usando solo clasificador estatico.")
+    except Exception as e:
+        print(f"Advertencia: no se pudo cargar el clasificador de movimiento: {e}")
+    
+    motion_buffer = MotionBuffer(maxlen=MOTION_BUFFER_SIZE)
+    
+    # Letras que activan el clasificador de movimiento
+    # Cuando el clasificador estatico predice estas, usamos el de movimiento para refinar
+    MOTION_TRIGGER_LABELS = {"I", "J", "Z"}
+    
     counter: Counter = Counter()
     confident_count = 0
     total = 0
@@ -103,26 +128,71 @@ def run_on_frames(
             label_text = "Sin mano"
             sub_text = "Coloque la mano frente a la camara"
             color = (200, 200, 200)
+            final_label = None
+            final_confidence = 0.0
+            motion_used = False
 
             if detection is not None:
                 draw_hand(frame, detection)
                 tops = predict_top(bundle, detection.features)
                 raw_label, confidence = tops[0]
-                smoothed = smoother.update(raw_label, confidence)
+                
+                # Agregar al buffer de movimiento siempre que haya deteccion
+                motion_buffer.add(detection, raw_label)
+                
+                # Verificar si debemos usar el clasificador de movimiento
+                use_motion = (
+                    motion_clf is not None 
+                    and raw_label in MOTION_TRIGGER_LABELS
+                    and motion_buffer.is_ready(MOTION_MIN_FRAMES)
+                )
+                
+                if use_motion:
+                    seq = motion_buffer.get_sequence()
+                    if seq is not None:
+                        motion_features = extract_trajectory_features(seq)
+                        motion_label, motion_conf = motion_clf.predict(motion_features)
+                        # Si el clasificador de movimiento esta muy confiado, usarlo
+                        if motion_conf >= 0.6:
+                            final_label = motion_label
+                            final_confidence = motion_conf
+                            motion_used = True
+                            # No agregar el raw_label al smoother, usamos el refinado
+                        else:
+                            # Movimiento no confiado, usar el estatico con suavizado
+                            smoothed = smoother.update(raw_label, confidence)
+                            if smoothed is not None:
+                                final_label = smoothed
+                                final_confidence = confidence
+                    else:
+                        smoothed = smoother.update(raw_label, confidence)
+                        if smoothed is not None:
+                            final_label = smoothed
+                            final_confidence = confidence
+                else:
+                    # Clasificacion estatica normal con suavizado
+                    smoothed = smoother.update(raw_label, confidence)
+                    if smoothed is not None:
+                        final_label = smoothed
+                        final_confidence = confidence
+                
                 counter[raw_label] += 1
                 if confidence >= config.CONFIDENCE_THRESHOLD:
                     confident_count += 1
 
                 # Top-3 de predicciones (con 26 clases ayuda a ver alternativas)
                 sub_text = "  ".join(f"{l}:{c:.0%}" for l, c in tops)
-                if smoothed is not None:
-                    label_text = f"Sena: {smoothed}"
-                    color = (0, 255, 0) if confidence >= config.CONFIDENCE_THRESHOLD else (0, 165, 255)
+                if motion_used:
+                    sub_text += f"  |  MOTION: {final_label}({final_confidence:.0%})"
+                if final_label is not None:
+                    label_text = f"Sena: {final_label}"
+                    color = (0, 255, 0) if final_confidence >= config.CONFIDENCE_THRESHOLD else (0, 165, 255)
                 else:
                     label_text = "Leyendo..."
                     color = (0, 165, 255)
             else:
                 smoother.reset()
+                motion_buffer.clear()
 
             now = time.perf_counter()
             fps = 0.9 * fps + 0.1 * (1.0 / max(now - last_time, 1e-6)) if fps else 1.0 / max(now - last_time, 1e-6)
