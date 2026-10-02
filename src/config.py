@@ -1,6 +1,6 @@
 """Configuración central del proyecto SignAI.
 
-Reúne rutas, clases (dígitos 0-5), dimensiones de los datos y
+Reúne rutas, clases (abecedario LSM A-Z), dimensiones de los datos y
 hiperparámetros del clasificador para que todos los módulos usen
 la misma información.
 """
@@ -36,9 +36,11 @@ DATASET_PATH = DATA_DIR / "hand_landmarks.csv"
 SAMPLE_DATASET_PATH = SAMPLES_DIR / "hand_landmarks_sample.csv"
 
 # ---------------------------------------------------------------------------
-# Clases del proyecto: digitos estaticos 0-5
+# Clases del proyecto: abecedario de la LSM (dactilologia A-Z)
+# J y Z requieren movimiento en LSM; se capturan con su postura estatica
+# base (limitacion documentada en README y docs/abecedario_lsm.md).
 # ---------------------------------------------------------------------------
-CLASSES: list[str] = ["0", "1", "2", "3", "4", "5"]
+CLASSES: list[str] = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
 
 # ---------------------------------------------------------------------------
 # Datos: 21 landmarks x 3 coordenadas (x, y, z) = 63 valores
@@ -75,9 +77,12 @@ FRAME_HEIGHT = 480
 # ---------------------------------------------------------------------------
 # Clasificacion en tiempo real
 # ---------------------------------------------------------------------------
-CONFIDENCE_THRESHOLD = 0.60   # prob. minima para mostrar una sena
+# Con 26 clases la probabilidad individual tiende a ser menor que con 6:
+# se baja el umbral para no perder la letra en pantalla.
+CONFIDENCE_THRESHOLD = 0.45   # prob. minima para mostrar una sena
 SMOOTHING_WINDOW = 10         # fotogramas de la ventana de votacion
 MIN_VOTES = 6                 # votos minimos de la ventana para cambiar etiqueta
+TOP_K = 3                     # predicciones alternativas mostradas en pantalla
 
 # ---------------------------------------------------------------------------
 # Entrenamiento (Random Forest principal + SVM / MLP como alternativas)
@@ -87,9 +92,12 @@ RANDOM_STATE = 42
 CV_FOLDS = 5
 
 RF_PARAMS: dict = {
-    "n_estimators": 200,
-    "max_depth": None,
-    "min_samples_leaf": 1,
+    # n_estimators/max_depth/min_samples_leaf se acotaron para mantener el
+    # modelo por debajo de 5 MB (compromiso de la ficha del proyecto) sin
+    # perder exactitud en las 26 letras.
+    "n_estimators": 150,
+    "max_depth": 16,
+    "min_samples_leaf": 4,
     "random_state": RANDOM_STATE,
     "n_jobs": -1,
 }

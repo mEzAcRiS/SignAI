@@ -1,17 +1,17 @@
-"""Recoleccion de datos con camara: captura de manos para los digitos 0-5.
+"""Recoleccion de datos con camara: captura de manos para el abecedario LSM (A-Z).
 
 Herramienta para que cada integrante capture sus muestras en su propia
 laptop y luego se unan todos los CSV con ``--merge``.
 
 Uso (en una laptop CON camara):
     python src/collect_data.py --person Alan
-    python src/collect_data.py --person Alan --per-class 150 --interval 250
+    python src/collect_data.py --person Alan --per-class 100 --interval 250
 
 Teclas:
-    0-5   = seleccionar el digito actual
+    A-Z     = seleccionar la letra actual (se muestra como formarla)
     ESPACIO = capturar una muestra
-    A     = activar/desactivar captura automatica
-    ESC   = guardar y salir
+    0       = activar/desactivar captura automatica
+    ESC     = guardar y salir
 
 Union de todos los CSV en el dataset final:
     python src/collect_data.py --merge
@@ -29,6 +29,7 @@ import cv2
 import config
 from dataset import DatasetError, append_samples, make_sample_row, merge_csvs
 from hand_detector import HandDetector, draw_hand, draw_label
+from letters import ascii_hint, hint_for
 
 
 # ----------------------------------------------------------------------
@@ -46,12 +47,12 @@ def collection_loop(args) -> None:
     hands_detected = 0
 
     print("=" * 60)
-    print(" RECOLECCION DE DATOS - SignAI")
+    print(" RECOLECCION DE DATOS - SignAI (abecedario LSM)")
     print("=" * 60)
     print(f" Persona      : {args.person}")
     print(f" Salida       : {out_path}")
-    print(f" Meta/clase   : {args.per_class}")
-    print(" Teclas: 0-5 = digito | ESPACIO = capturar | A = auto | ESC = salir")
+    print(f" Meta/letra   : {args.per_class}")
+    print(" Teclas: A-Z = letra | ESPACIO = capturar | 0 = auto | ESC = salir")
     print("=" * 60)
 
     cap = cv2.VideoCapture(args.camera)
@@ -88,37 +89,48 @@ def collection_loop(args) -> None:
                     captured_now = True
 
             # Panel de estado
-            status = f"Digito actual: {current_label}  ({counts[current_label]}/{args.per_class})"
+            status = f"Letra actual: {current_label}  ({counts[current_label]}/{args.per_class})"
             mode = "AUTO" if auto else "MANUAL"
             color = (0, 255, 0) if detection is not None else (0, 0, 255)
             draw_label(
                 frame,
                 status,
                 f"modo {mode} | mano: {'OK' if detection else 'NO'} | "
-                f"total {sum(counts.values())} | personas: {args.person}",
+                f"total {sum(counts.values())} | {args.person}",
                 color=color,
             )
             if captured_now:
                 cv2.circle(frame, (frame.shape[1] - 40, 40), 15, (0, 255, 0), -1)
 
-            y0 = 130
-            for label in config.CLASSES:
-                bar = f"{label}: {counts[label]:>4}"
+            # Conteo por letra en dos columnas (26 letras no caben en una)
+            half = (len(config.CLASSES) + 1) // 2
+            for idx, label in enumerate(config.CLASSES):
+                col, row = divmod(idx, half)
+                x = 18 + col * 200
+                y = 125 + row * 22
                 highlight = label == current_label
+                text = f"{label}: {counts[label]:>4}"
                 cv2.putText(
-                    frame, bar, (18, y0), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                     (0, 255, 255) if highlight else (220, 220, 220),
                     2 if highlight else 1, cv2.LINE_AA,
                 )
-                y0 += 26
+
+            # Pista: como formar la letra que se esta capturando
+            cv2.rectangle(frame, (8, 424), (frame.shape[1] - 8, 472), (20, 20, 20), -1)
+            cv2.putText(
+                frame, ascii_hint(current_label), (18, 455),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 220, 255), 1, cv2.LINE_AA,
+            )
 
             cv2.imshow("SignAI - recoleccion de datos", frame)
             key = cv2.waitKey(1) & 0xFF
 
             if key == 27:  # ESC
                 break
-            if ord("0") <= key <= ord("5"):
-                current_label = chr(key)
+            if ord("a") <= key <= ord("z") or ord("A") <= key <= ord("Z"):
+                current_label = chr(key).upper()
+                print(f"  letra {current_label}: {hint_for(current_label)}")
             elif key == ord(" "):
                 if detection is None:
                     print("  no se detecto mano; acerca la mano a la camara")
@@ -126,10 +138,10 @@ def collection_loop(args) -> None:
                     _capture(detection, current_label, args.person, out_path, counts)
                     last_capture = time.perf_counter()
                     print(
-                        f"  capturado digito {current_label} "
+                        f"  capturada letra {current_label} "
                         f"({counts[current_label]}/{args.per_class})"
                     )
-            elif key in (ord("a"), ord("A")):
+            elif key == ord("0"):
                 auto = not auto
                 print(f"  captura automatica: {'ON' if auto else 'OFF'}")
 
@@ -145,7 +157,7 @@ def collection_loop(args) -> None:
     print()
     print("Resumen de la sesion:")
     for label in config.CLASSES:
-        print(f"  digito {label}: {counts[label]}")
+        print(f"  letra {label}: {counts[label]}")
     print(f"  total: {sum(counts.values())} muestras en {out_path}")
     print(f"  (fotogramas: {frames}, con mano: {hands_detected})")
     print("Siguiente paso: python src/collect_data.py --merge")
@@ -187,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Captura de muestras con camara.")
     parser.add_argument("--person", help="nombre del integrante que captura (ej. Alan)")
     parser.add_argument("--camera", type=int, default=config.CAMERA_INDEX, help="indice de camara")
-    parser.add_argument("--per-class", type=int, default=150, help="meta de muestras por digito")
+    parser.add_argument("--per-class", type=int, default=100, help="meta de muestras por letra")
     parser.add_argument("--interval", type=int, default=250, help="ms entre capturas automaticas")
     parser.add_argument("--auto", action="store_true", help="iniciar en modo captura automatica")
     parser.add_argument("--out", default=str(config.DATA_DIR / "collected"), help="carpeta de salida")

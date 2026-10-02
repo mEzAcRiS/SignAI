@@ -1,4 +1,4 @@
-"""SignAI - aplicacion de reconocimiento de digitos 0-5 en tiempo real.
+"""SignAI - aplicacion de reconocimiento del abecedario LSM (A-Z) en tiempo real.
 
 Entrada:    camara web, archivo de video, imagen o CSV de caracteristicas.
 Proceso:    MediaPipe HandLandmarker (21 landmarks -> 63 valores) y
@@ -30,7 +30,7 @@ import numpy as np
 import config
 from dataset import DatasetError, load_dataset, split_xy
 from hand_detector import HandDetector, draw_hand, draw_label
-from train import load_classifier, predict_batch, predict_features
+from train import load_classifier, predict_batch, predict_top
 
 
 # ----------------------------------------------------------------------
@@ -82,7 +82,7 @@ def run_on_frames(
     frames,
     bundle: dict,
     gui: bool,
-    window_name: str = "SignAI - Reconocimiento de digitos 0-5",
+    window_name: str = "SignAI - reconocimiento del abecedario LSM (A-Z)",
     save_dir: Path | None = None,
     hold: bool = False,
 ) -> dict:
@@ -106,19 +106,20 @@ def run_on_frames(
 
             if detection is not None:
                 draw_hand(frame, detection)
-                raw_label, confidence = predict_features(bundle, detection.features)
+                tops = predict_top(bundle, detection.features)
+                raw_label, confidence = tops[0]
                 smoothed = smoother.update(raw_label, confidence)
                 counter[raw_label] += 1
                 if confidence >= config.CONFIDENCE_THRESHOLD:
                     confident_count += 1
 
+                # Top-3 de predicciones (con 26 clases ayuda a ver alternativas)
+                sub_text = "  ".join(f"{l}:{c:.0%}" for l, c in tops)
                 if smoothed is not None:
                     label_text = f"Sena: {smoothed}"
-                    sub_text = f"confianza {confidence:.0%} | bruto: {raw_label}"
                     color = (0, 255, 0) if confidence >= config.CONFIDENCE_THRESHOLD else (0, 165, 255)
                 else:
                     label_text = "Leyendo..."
-                    sub_text = f"confianza {confidence:.0%}"
                     color = (0, 165, 255)
             else:
                 smoother.reset()
@@ -223,7 +224,7 @@ def run_csv(csv_path: str | Path, bundle: dict) -> int:
 
 # ----------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Reconocimiento de digitos 0-5 en tiempo real.")
+    parser = argparse.ArgumentParser(description="reconocimiento del abecedario LSM (A-Z) en tiempo real.")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--demo", metavar="VIDEO", help="modo demostracion con un video (sin camara)")
     source.add_argument("--demo-image", metavar="IMG", help="modo demostracion con una imagen")

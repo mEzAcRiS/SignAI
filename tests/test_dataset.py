@@ -26,7 +26,7 @@ def _valid_df(n: int = 10, seed: int = 1) -> pd.DataFrame:
         rows.append(
             make_sample_row(
                 rng.normal(0, 0.2, config.NUM_FEATURES),
-                label=str(i % 6),
+                label=config.CLASSES[i % len(config.CLASSES)],
                 person="test",
             ).iloc[0]
         )
@@ -65,7 +65,7 @@ def test_valores_no_numericos():
 
 def test_fila_de_caracteristicas_de_tamano_erroneo():
     with pytest.raises(DatasetError, match="63"):
-        make_sample_row(np.zeros(10), label="1")
+        make_sample_row(np.zeros(10), label=config.CLASSES[0])
 
 
 def test_guardar_y_cargar(tmp_path):
@@ -89,7 +89,7 @@ def test_cargar_archivo_vacio(tmp_path):
 
 def test_append_no_duplica_si_se_llama_dos_veces(tmp_path):
     path = tmp_path / "d.csv"
-    row = make_sample_row(np.zeros(config.NUM_FEATURES), "2")
+    row = make_sample_row(np.zeros(config.NUM_FEATURES), config.CLASSES[1])
     append_samples(row, path)
     append_samples(row, path)  # fila identica -> se deduplica
     df = load_dataset(path)

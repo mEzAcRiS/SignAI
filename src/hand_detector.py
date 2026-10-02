@@ -200,7 +200,7 @@ def draw_label(
     color=(0, 255, 0),
 ) -> np.ndarray:
     """Dibuja la etiqueta de la sena en la esquina superior izquierda."""
-    cv2.rectangle(frame, (8, 8), (300, 96 if sub_text else 60), (20, 20, 20), -1)
+    cv2.rectangle(frame, (8, 8), (380, 96 if sub_text else 60), (20, 20, 20), -1)
     cv2.putText(
         frame, text, (18, 46), cv2.FONT_HERSHEY_SIMPLEX, 1.1, color, 2, cv2.LINE_AA
     )

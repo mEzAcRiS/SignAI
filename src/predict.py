@@ -1,4 +1,4 @@
-"""Prediccion de digitos sobre imagenes, videos o CSV (sin camara).
+"""Prediccion del abecedario LSM (A-Z) sobre imagenes, videos o CSV (sin camara).
 
 Sirve para verificar el modelo sin tiempo real y es la base de varias
 pruebas del informe de QA.

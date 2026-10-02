@@ -1,4 +1,4 @@
-"""Entrenamiento y comparacion de clasificadores para los digitos 0-5.
+"""Entrenamiento y comparacion de clasificadores para el abecedario LSM (A-Z).
 
 Flujo:
     1. Carga y valida el dataset de 63 caracteristicas.
@@ -197,7 +197,8 @@ def train(
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(bundle, out_path)
+    # compress=3 mantiene el modelo compacto (objetivo: menos de 5 MB)
+    joblib.dump(bundle, out_path, compress=3)
 
     metrics_path = out_path.with_name("metrics.json")
     metrics_path.write_text(
@@ -229,7 +230,7 @@ def _save_confusion_matrix(cm: np.ndarray, labels: list[str]) -> Path | None:
     ax.set_yticks(range(len(labels)), labels)
     ax.set_xlabel("Pronostico")
     ax.set_ylabel("Real")
-    ax.set_title("Matriz de confusion - dígitos 0 a 5")
+    ax.set_title("Matriz de confusion - abecedario LSM (A-Z)")
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
             ax.text(
@@ -269,6 +270,17 @@ def predict_features(bundle: dict, features: np.ndarray) -> tuple[str, float]:
     return str(labels[0]), float(confidences[0])
 
 
+def predict_top(
+    bundle: dict, features: np.ndarray, k: int = config.TOP_K
+) -> list[tuple[str, float]]:
+    """Devuelve las k predicciones mas probables [(etiqueta, probabilidad)]."""
+    X = np.asarray(features, dtype=np.float32).reshape(1, -1)
+    model = bundle["model"]
+    proba = model.predict_proba(X)[0]
+    order = np.argsort(proba)[::-1][: max(1, k)]
+    return [(str(model.classes_[i]), float(proba[i])) for i in order]
+
+
 def predict_batch(bundle: dict, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Predice muchas muestras a la vez (para CSVs y videos).
 
@@ -287,7 +299,7 @@ def predict_batch(bundle: dict, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 # ----------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Entrena el clasificador de digitos 0-5.")
+    parser = argparse.ArgumentParser(description="Entrena el clasificador del abecedario LSM (A-Z).")
     parser.add_argument(
         "--data", default=str(config.DATASET_PATH),
         help="Ruta al CSV del dataset (por defecto data/hand_landmarks.csv)",

@@ -6,7 +6,7 @@ computadora del docente). El dataset real se recolecta con la camara
 usando src/collect_data.py.
 
 Cada muestra se construye como una mano de 21 puntos con la postura de
-cada digito (dedos extendidos o doblados), se agrega ruido y variacion de
+cada letra del abecedario LSM, se agrega ruido y variacion de
 angulo/escala/espejo, y finalmente se normaliza con la misma funcion que
 usa el programa en tiempo real (origen en la muneca, escala por tamano).
 
@@ -58,15 +58,44 @@ LENGTHS = [
     [0.22, 0.15, 0.12],   # meñique
 ]
 
-# Angulo de doblado por articulacion (grados) para cada dedo:
-# [pulgar, indice, medio, anular, meñique]
-DIGIT_POSTURES: dict[str, list[float]] = {
-    "0": [55, 70, 70, 70, 70],   # puno cerrado
-    "1": [55, 0, 75, 75, 75],    # solo indice
-    "2": [55, 0, 0, 75, 75],     # indice + medio
-    "3": [70, 0, 0, 0, 75],      # indice + medio + anular
-    "4": [75, 0, 0, 0, 0],       # cuatro dedos
-    "5": [0, 0, 0, 0, 0],        # mano abierta
+# ---------------------------------------------------------------------------
+# Postura de cada letra del abecedario LSM (datos sinteticos de prueba)
+# ---------------------------------------------------------------------------
+# Cada letra define:
+#   curl = angulo de doblado por articulacion (grados; 0 = dedo estirado)
+#   fan  = giro de la direccion base del dedo (grados; abre/cierra el dedo)
+# Orden de los valores: [pulgar, indice, medio, anular, menique]
+#
+# Son aproximaciones REPRESENTATIVAS de las letras de la dactilologia LSM
+# (ver src/letters.py y docs/abecedario_lsm.md), disenadas ademas para ser
+# distinguibles entre si: los datos reales se capturan con la camara.
+LETTER_POSTURES: dict[str, dict[str, list[float]]] = {
+    "A": {"curl": [15, 70, 70, 70, 70], "fan": [30, 0, 0, 0, 0]},
+    "B": {"curl": [80, 0, 0, 0, 0], "fan": [0, 0, 0, 0, 0]},
+    "C": {"curl": [35, 40, 40, 40, 40], "fan": [0, 0, 0, 0, 0]},
+    "D": {"curl": [60, 0, 75, 75, 75], "fan": [0, 0, 0, 0, 0]},
+    "E": {"curl": [55, 80, 80, 80, 80], "fan": [10, 0, 0, 0, 0]},
+    "F": {"curl": [45, 65, 0, 0, 0], "fan": [0, 0, 0, 0, 0]},
+    "G": {"curl": [0, 0, 75, 75, 75], "fan": [-25, -70, 0, 0, 0]},
+    "H": {"curl": [70, 0, 0, 75, 75], "fan": [0, -70, -70, 0, 0]},
+    "I": {"curl": [65, 75, 75, 75, 0], "fan": [0, 0, 0, 0, 0]},
+    "J": {"curl": [65, 75, 75, 75, 35], "fan": [0, 0, 0, 0, 0]},
+    "K": {"curl": [0, 0, 0, 75, 75], "fan": [15, -12, 12, 0, 0]},
+    "L": {"curl": [0, 0, 75, 75, 75], "fan": [-55, 0, 0, 0, 0]},
+    "M": {"curl": [85, 60, 60, 60, 78], "fan": [0, 0, 0, 0, 0]},
+    "N": {"curl": [85, 60, 60, 78, 78], "fan": [0, 0, 0, 0, 0]},
+    "O": {"curl": [55, 60, 60, 60, 60], "fan": [0, 0, 0, 0, 0]},
+    "P": {"curl": [20, 0, 0, 75, 75], "fan": [120, 180, 180, 0, 0]},
+    "Q": {"curl": [0, 0, 75, 75, 75], "fan": [140, 150, 0, 0, 0]},
+    "R": {"curl": [85, 15, 15, 75, 75], "fan": [0, 8, -8, 0, 0]},
+    "S": {"curl": [85, 72, 72, 72, 72], "fan": [35, 0, 0, 0, 0]},
+    "T": {"curl": [30, 55, 70, 70, 70], "fan": [45, 0, 0, 0, 0]},
+    "U": {"curl": [85, 0, 0, 75, 75], "fan": [0, 4, -4, 0, 0]},
+    "V": {"curl": [85, 0, 0, 75, 75], "fan": [0, -20, 20, 0, 0]},
+    "W": {"curl": [85, 0, 0, 0, 75], "fan": [0, -22, 0, 22, 0]},
+    "X": {"curl": [85, 45, 75, 75, 75], "fan": [0, 0, 0, 0, 0]},
+    "Y": {"curl": [0, 75, 75, 75, 0], "fan": [-45, 0, 0, 0, 0]},
+    "Z": {"curl": [85, 15, 75, 75, 75], "fan": [45, 15, 0, 0, 0]},
 }
 
 WRIST = np.array([0.0, 0.0])
@@ -91,12 +120,19 @@ def _finger_chain(base, direction, lengths, curl_deg, rng) -> np.ndarray:
 
 
 def make_hand(label: str, rng: np.random.Generator) -> np.ndarray:
-    """Construye una mano (21, 2) con la postura del digito indicado."""
-    curls = DIGIT_POSTURES[label]
+    """Construye una mano (21, 2) con la postura de la letra indicada."""
+    spec = LETTER_POSTURES[label]
+    curls, fans = spec["curl"], spec["fan"]
+
+    directions = []
+    for i in range(5):
+        fan = fans[i] + rng.normal(0, 3)   # variacion del abanico por captura
+        directions.append(_rotate(DIRECTIONS[i], np.deg2rad(fan)))
+
     parts = [WRIST.reshape(1, 2)]
     for i in range(5):
         parts.append(
-            _finger_chain(BASE_POINTS[i], DIRECTIONS[i], LENGTHS[i], curls[i], rng)
+            _finger_chain(BASE_POINTS[i], directions[i], LENGTHS[i], curls[i], rng)
         )
     hand = np.vstack(parts)  # (21, 2)
 

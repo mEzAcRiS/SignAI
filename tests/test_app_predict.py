@@ -16,31 +16,31 @@ from predict import main as predict_main, predict_csv, predict_image
 # ----------------------------------------------------------------------
 def test_smoother_rechaza_baja_confianza():
     s = SignSmoother(threshold=0.6, min_votes=2, window=5)
-    assert s.update("3", 0.4) is None
+    assert s.update("D", 0.4) is None
 
 
 def test_smoother_requiere_mayoria():
     s = SignSmoother(threshold=0.5, min_votes=3, window=5)
-    s.update("1", 0.9)
-    s.update("1", 0.9)
-    assert s.update("1", 0.9) == "1"  # 3 votos seguidos
+    s.update("A", 0.9)
+    s.update("A", 0.9)
+    assert s.update("A", 0.9) == "A"  # 3 votos seguidos
 
 
 def test_smoother_cambia_cuando_hay_mayoria_nueva():
     s = SignSmoother(threshold=0.5, min_votes=3, window=5)
     for _ in range(3):
-        s.update("1", 0.9)
-    assert s.current == "1"
+        s.update("A", 0.9)
+    assert s.current == "A"
     for _ in range(3):
-        s.update("4", 0.9)
-    assert s.current == "4"
+        s.update("B", 0.9)
+    assert s.current == "B"
 
 
 def test_smoother_olvida_si_no_hay_mano():
     s = SignSmoother(threshold=0.5, min_votes=2, window=5)
-    s.update("2", 0.9)
-    s.update("2", 0.9)
-    assert s.current == "2"
+    s.update("C", 0.9)
+    s.update("C", 0.9)
+    assert s.current == "C"
     s.reset()
     assert s.current is None and len(s.votes) == 0
 

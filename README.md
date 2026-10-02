@@ -1,10 +1,16 @@
-# SignAI — Reconocimiento de dígitos 0–5 con visión por computadora
+# SignAI — Reconocimiento del abecedario LSM (A–Z) con visión por computadora
 
-Prototipo de reconocimiento de **señas estáticas de la mano (dígitos 0 a 5) en
-tiempo real**. La cámara captura la mano, **MediaPipe** extrae 21 puntos clave
-(landmarks), se forma un vector de **63 coordenadas (x, y, z)** y un
-**Random Forest** clasifica la seña, mostrando el resultado en pantalla con
+Prototipo de reconocimiento de **señas estáticas del abecedario de la Lengua
+de Señas Mexicana (dactilología A–Z, 26 letras) en tiempo real**. La cámara
+captura la mano, **MediaPipe** extrae 21 puntos clave (landmarks), se forma un
+vector de **63 coordenadas (x, y, z)** y un **Random Forest** clasifica la
+seña, mostrando el resultado en pantalla con las 3 opciones más probables,
 confianza y esqueleto dibujado.
+
+> **Limitación documentada:** las letras **J** y **Z** requieren movimiento
+> (trazo en el aire). El sistema captura la postura estática de ambas: si se
+> forman como se indica en `docs/abecedario_lsm.md` se reconocen, pero el
+> movimiento del trazo no se modela.
 
 | | |
 |---|---|
@@ -31,7 +37,7 @@ Normalización  ──►  vector de 63 valores
  escala por tamaño de mano)
         │
         ▼
-Random Forest (scikit-learn) ──►  dígito 0–5 + confianza
+Random Forest (scikit-learn) ──►  letra A–Z + top-3 + confianza
         │
         ▼
 Pantalla: seña identificada, FPS y esqueleto de la mano
@@ -106,7 +112,8 @@ Teclas: **ESC** salir · **P** pausa · **S** guardar captura.
 .\.venv\Scripts\python.exe src\collect_data.py --person Alan --per-class 150
 ```
 
-Teclas: **0–5** elegir dígito · **ESPACIO** capturar · **A** captura automática
+Teclas: **A–Z** elegir letra (se muestra cómo formarla en pantalla) ·
+**ESPACIO** capturar · **0** captura automática
 · **ESC** guardar y salir. Cada integrante genera `data/collected/<nombre>.csv`
 y al final se unen todos:
 
@@ -129,7 +136,8 @@ SignAI/
 ├── requirements.txt           # dependencias con versión congelada
 ├── pytest.ini                 # configuración de las pruebas
 ├── src/
-│   ├── config.py              # rutas, clases 0–5 e hiperparámetros
+│   ├── config.py              # rutas, clases A–Z e hiperparámetros
+│   ├── letters.py             # texto y pista de cada letra del abecedario
 │   ├── hand_detector.py       # MediaPipe → 21 landmarks → 63 valores
 │   ├── dataset.py             # lectura/validación/merge de CSV
 │   ├── collect_data.py        # recolección con cámara
@@ -145,7 +153,9 @@ SignAI/
 ├── data/
 │   ├── samples/               # datos de prueba + imagen de prueba
 │   └── collected/             # CSV por integrante (se genera)
-└── docs/                      # capturas y matriz de confusión
+└── docs/
+    ├── abecedario_lsm.md      # cómo formar cada letra (guía de captura)
+    └── ...                    # capturas y matriz de confusión
 ```
 
 ## 6. Pruebas (QA)
@@ -176,9 +186,9 @@ predicción, suavizado de la app y modos sin cámara.
 
 | Recurso | Origen | Licencia |
 |---|---|---|
-| `data/samples/hand_landmarks_sample.csv` (900 muestras) | Generado por el equipo con `scripts/make_sample_data.py` (sintético, solo para pruebas) | CC0 – uso libre |
+| `data/samples/hand_landmarks_sample.csv` (3900 muestras) | Generado por el equipo con `scripts/make_sample_data.py` (sintético, solo para pruebas) | CC0 – uso libre |
 | `data/samples/hand_test.jpg` | Muestra oficial de [mediapipe-samples](https://github.com/google-ai-edge/mediapipe-samples) (androidTest/assets) | Apache-2.0 |
-| Dataset real de los dígitos 0–5 | Recolectado por el equipo con `src/collect_data.py` | CC0 – uso libre |
+| Dataset real del abecedario LSM (A–Z) | Recolectado por el equipo con `src/collect_data.py` | CC0 – uso libre |
 
 ## 8. Declaración de uso de IA generativa
 
