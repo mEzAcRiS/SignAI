@@ -10,7 +10,7 @@
       "cv_accuracy_std": 0.004753973389163907,
       "test_accuracy": 0.9615384615384616,
       "test_f1_macro": 0.9615704828996468,
-      "train_seconds": 1.79
+      "train_seconds": 2.94
     },
     "svm": {
       "nombre": "SVM (RBF)",
@@ -18,7 +18,7 @@
       "cv_accuracy_std": 0.0032998814554445395,
       "test_accuracy": 0.9666666666666667,
       "test_f1_macro": 0.9666159512255597,
-      "train_seconds": 10.02
+      "train_seconds": 12.38
     },
     "mlp": {
       "nombre": "MLP (red neuronal)",
@@ -26,7 +26,7 @@
       "cv_accuracy_std": 0.004796996649710164,
       "test_accuracy": 0.9756410256410256,
       "test_f1_macro": 0.9756848614393243,
-      "train_seconds": 9.92
+      "train_seconds": 10.86
     }
   },
   "confusion_matrix": {
