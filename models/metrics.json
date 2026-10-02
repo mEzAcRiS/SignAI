@@ -1,0 +1,93 @@
+{
+  "cv_accuracy_mean": 1.0,
+  "cv_accuracy_std": 0.0,
+  "test_accuracy": 1.0,
+  "test_f1_macro": 1.0,
+  "all_models": {
+    "rf": {
+      "nombre": "Random Forest",
+      "cv_accuracy_mean": 1.0,
+      "cv_accuracy_std": 0.0,
+      "test_accuracy": 1.0,
+      "test_f1_macro": 1.0,
+      "train_seconds": 1.63
+    },
+    "svm": {
+      "nombre": "SVM (RBF)",
+      "cv_accuracy_mean": 0.9986111111111111,
+      "cv_accuracy_std": 0.002777777777777768,
+      "test_accuracy": 1.0,
+      "test_f1_macro": 1.0,
+      "train_seconds": 0.54
+    },
+    "mlp": {
+      "nombre": "MLP (red neuronal)",
+      "cv_accuracy_mean": 1.0,
+      "cv_accuracy_std": 0.0,
+      "test_accuracy": 1.0,
+      "test_f1_macro": 1.0,
+      "train_seconds": 1.15
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+    ],
+    "matrix": [
+      [
+        30,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        30,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        30,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        30,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        30,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        30
+      ]
+    ]
+  },
+  "classification_report": "              precision    recall  f1-score   support\n\n           0      1.000     1.000     1.000        30\n           1      1.000     1.000     1.000        30\n           2      1.000     1.000     1.000        30\n           3      1.000     1.000     1.000        30\n           4      1.000     1.000     1.000        30\n           5      1.000     1.000     1.000        30\n\n    accuracy                          1.000       180\n   macro avg      1.000     1.000     1.000       180\nweighted avg      1.000     1.000     1.000       180\n"
+}
