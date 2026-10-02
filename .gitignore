@@ -1,0 +1,29 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Sistema
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Experimentos locales (no subir videos grandes de prueba)
+*.mp4
+*.avi
+!docs/*.mp4
