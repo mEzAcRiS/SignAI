@@ -35,9 +35,10 @@ from motion import (
     MotionBuffer,
     MotionClassifier,
     MOTION_BUFFER_SIZE,
-    MOTION_MIN_FRAMES,
+    candidate_for,
     extract_trajectory_features,
     load_motion_classifier,
+    should_use_motion,
 )
 
 
@@ -110,10 +111,6 @@ def run_on_frames(
     
     motion_buffer = MotionBuffer(maxlen=MOTION_BUFFER_SIZE)
     
-    # Letras que activan el clasificador de movimiento
-    # Cuando el clasificador estatico predice estas, usamos el de movimiento para refinar
-    MOTION_TRIGGER_LABELS = {"I", "J", "Z"}
-    
     counter: Counter = Counter()
     confident_count = 0
     total = 0
@@ -137,23 +134,25 @@ def run_on_frames(
                 tops = predict_top(bundle, detection.features)
                 raw_label, confidence = tops[0]
                 
-                # Agregar al buffer de movimiento siempre que haya deteccion
-                motion_buffer.add(detection, raw_label)
+                # Acumular frames SIEMPRE (sin filtro por letra: asi una J
+                # que el estatico lee como I tambien llena el buffer)
+                motion_buffer.add(detection)
                 
-                # Verificar si debemos usar el clasificador de movimiento
+                # Regla hibrida: buffer listo + etiqueta candidata (J,K,Ñ,Q,X,Z
+                # e I/N/G) + movimiento real >= umbral (anti falsos positivos)
                 use_motion = (
-                    motion_clf is not None 
-                    and raw_label in MOTION_TRIGGER_LABELS
-                    and motion_buffer.is_ready(MOTION_MIN_FRAMES)
+                    motion_clf is not None
+                    and should_use_motion(raw_label, motion_buffer)
                 )
                 
                 if use_motion:
-                    seq = motion_buffer.get_sequence()
+                    candidate = candidate_for(raw_label)
+                    seq = motion_buffer.get_sequence(candidate) if candidate else None
                     if seq is not None:
                         motion_features = extract_trajectory_features(seq)
                         motion_label, motion_conf = motion_clf.predict(motion_features)
                         # Si el clasificador de movimiento esta muy confiado, usarlo
-                        if motion_conf >= 0.6:
+                        if motion_conf >= config.MOTION_MIN_CONFIDENCE:
                             final_label = motion_label
                             final_confidence = motion_conf
                             motion_used = True

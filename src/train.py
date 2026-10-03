@@ -10,7 +10,7 @@ Flujo (clasificador estatico):
     4. Entrena el modelo final (Random Forest por defecto) y lo guarda
        en ``models/model.joblib`` junto con las metricas.
 
-Flujo (clasificador de movimiento para J/Z):
+Flujo (clasificador de movimiento, 6 letras dinamicas):
     python src/train.py --motion               # entrena modelo de trazo
     python src/train.py --motion --motion-model rf  # con Random Forest
 
@@ -18,7 +18,7 @@ Uso:
     python src/train.py                        # dataset completo (estatico)
     python src/train.py --data data/samples/hand_landmarks_sample.csv
     python src/train.py --model best           # elige el mejor por CV
-    python src/train.py --motion               # entrena modelo de movimiento J/Z
+    python src/train.py --motion               # modelo de movimiento (J,K,Ñ,Q,X,Z)
 """
 
 from __future__ import annotations
@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--motion", action="store_true",
-        help="Entrenar el clasificador de movimiento para J y Z (usa data/motion_landmarks.csv)",
+        help="Entrenar el clasificador de movimiento para las 6 letras dinamicas (J,K,Ñ,Q,X,Z)",
     )
     parser.add_argument(
         "--motion-model", choices=["svm", "rf"], default="svm",
@@ -349,9 +349,19 @@ def main(argv: list[str] | None = None) -> int:
                 merge_motion_csvs(collected, data_path)
                 print(f"Dataset de movimiento creado: {data_path}")
             else:
-                print(f"ERROR: no existe el dataset de movimiento '{data_path}'.")
-                print("Primero captura datos de movimiento con: python src/collect_data.py --person Nombre --motion")
-                return 1
+                # Respaldo: datos sinteticos (igual que el clasificador
+                # estatico usa data/samples cuando falta el dataset real).
+                if config.SAMPLE_MOTION_DATASET_PATH.exists():
+                    print(
+                        f"Aviso: no hay capturas de movimiento; se usan los "
+                        f"trazos sinteticos: {config.SAMPLE_MOTION_DATASET_PATH}"
+                    )
+                    data_path = config.SAMPLE_MOTION_DATASET_PATH
+                else:
+                    print(f"ERROR: no existe el dataset de movimiento '{data_path}'.")
+                    print("Captura con: python src/collect_data.py --person Nombre --motion")
+                    print("O genera los trazos sinteticos con: python scripts/make_sample_motion_data.py")
+                    return 1
         try:
             train_motion_model(
                 data_path=data_path,

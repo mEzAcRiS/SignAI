@@ -8,13 +8,13 @@ Guia resumida de como formar cada letra con la mano, usada por:
 
 Notas importantes:
 
-* LSM usa ademas el movimiento en algunas letras; aqui se describen las
-  configuraciones **estaticas** de la mano, que es lo que una camara puede
-  capturar en un fotograma.
-* J y Z en LSM se completan con movimiento: en este prototipo se capturan
-  con su postura base estatica (limitacion documentada del proyecto).
-* Fuente de referencia: abecedario oficial SEP / Aprende.mx y
-  "Manos con voz" (Serafin de Fleischmann y Gonzalez Perez, 2011).
+* Aqui se describen las configuraciones **estaticas** de la mano (lo que
+  una camara captura en un fotograma).
+* 6 letras son dinamicas (J, K, Ñ, Q, X, Z): su postura base se describe
+  aqui y su trazo lo analiza ``src/motion.py`` (ver MOTION_TRACE_HINTS).
+* Fuente de referencia: abecedario oficial SEP / Aprende.mx,
+  "Manos con voz" (Fleischmann y Gonzalez Perez, 2011) y el dataset
+  "static and dynamic signs for the Mexican Sign Language alphabet".
 """
 
 from __future__ import annotations

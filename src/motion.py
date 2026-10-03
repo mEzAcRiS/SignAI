@@ -1,21 +1,27 @@
-"""Modulo de reconocimiento de movimiento para J y Z en LSM.
+"""Modulo de reconocimiento de movimiento para las letras dinamicas del LSM.
 
-Este modulo implementa un clasificador de segundo nivel que analiza la
-trayectoria del dedo relevante (menique para J, indice para Z) a lo
-largo de una secuencia de fotogramas para distinguir J de I y Z de
-otras letras con indice estirado.
+El alfabeto LSM tiene 6 letras dinamicas: J, K, Ñ, Q, X, Z. Este modulo
+implementa un clasificador de segundo nivel que analiza la trayectoria de
+la mano a lo largo de ~20 fotogramas para decidir cual de las 6 es, solo
+cuando hay movimiento real (umbral anti-falsos-positivos).
 
 Arquitectura:
     HandDetector -> 21 landmarks/frame
                     |
                     v
-    MotionBuffer (ring buffer de N frames)
+    MotionBuffer (ring buffer de N frames, guarda los 21 landmarks)
+        |  is_moving()  -> hay movimiento real? (punta + orientacion + muneca)
+        |  get_sequence(letra) -> [t, tip, wrist, orient] (N, 6)
                     |
                     v
-    extract_trajectory_features() -> vector de ~25 features
+    extract_trajectory_features() -> vector de 29 features
                     |
                     v
-    MotionClassifier (SVM/RF) -> "J" o "Z"
+    MotionClassifier (SVM/RF) -> "J" | "K" | "Ñ" | "Q" | "X" | "Z"
+
+Nota: K, Ñ y Q se mueven con la MUNECA (balanceo/pivote), por eso las
+features incluyen orientacion de la mano y trayectoria de la muneca, no
+solo la punta del dedo.
 """
 
 from __future__ import annotations
@@ -42,55 +48,63 @@ from hand_detector import HandDetection
 
 
 # ----------------------------------------------------------------------
-# Configuracion del buffer y features
+# Configuracion del buffer y features (unica fuente: config.py)
 # ----------------------------------------------------------------------
-MOTION_BUFFER_SIZE = 20
-MOTION_FINGER_TIP = {"J": 20, "Z": 8}  # landmark indices
-MOTION_MIN_FRAMES = 10  # minimo de frames para extraer features validos
+MOTION_BUFFER_SIZE = config.MOTION_BUFFER_SIZE
+MOTION_MIN_FRAMES = config.MOTION_MIN_FRAMES
+MOTION_FINGER_TIP = config.MOTION_FINGER_TIP
+
+# Puntas de los cuatro dedos largos: con ellas se mide si hay movimiento
+# (cualquier dedo en movimiento cuenta como "mano en movimiento").
+_ALL_FINGER_TIPS = (8, 12, 16, 20)
+# Landmark 0 = muneca, 9 = MCP del dedo medio (define la orientacion).
+_WRIST, _MCP_MIDDLE = 0, 9
+
+# Trazos de cada letra dinamica (para la pantalla de captura y los docs).
+MOTION_TRACE_HINTS: dict[str, str] = {
+    "J": "Manique arriba, dibuja J: baja y enganche a la izquierda",
+    "K": "Config K (V) y balancea la muneca arriba-abajo",
+    "Ñ": "Config N y balancea la muneca lado a lado (virgulilla)",
+    "Q": "Gatillo abajo y pivotea la muneca izquierda-derecha",
+    "X": "Gancho del indice y rasgueo hacia ti (traccion)",
+    "Z": "Indice: horizontal, diagonal abajo, horizontal",
+}
 
 
 @dataclass
 class MotionSample:
     """Una muestra de movimiento (secuencia de frames)."""
     features: np.ndarray      # vector de features extraidos (MOTION_NUM_FEATURES,)
-    label: str               # "J" o "Z"
+    label: str               # letra dinamica: J, K, Ñ, Q, X o Z
     person: str
     timestamp: float
 
 
 class MotionBuffer:
-    """Buffer circular que almacena las ultimas N detecciones de mano.
-    
-    Mantiene las coordenadas del landmark relevante (punta del dedo)
-    y de la muneca para calcular trayectorias relativas.
+    """Buffer circular con los ultimos N frames detectados de la mano.
+
+    Guarda los 21 landmarks de cada frame (NO filtra por letra: asi el
+    problema I/J siempre acumula fotogramas) y de ahi deriva:
+
+    * ``get_sequence(letra)``  -> [t, tip, wrist, orient] para esa letra;
+    * ``is_moving()``          -> si hubo movimiento real (punta, orientacion
+      de la mano o traslacion de la muneca), para no invocar al clasificador
+      con la mano quieta.
     """
 
     def __init__(self, maxlen: int = MOTION_BUFFER_SIZE):
         self.maxlen = maxlen
-        # Cada entrada: (timestamp, finger_tip_xy, wrist_xy, handedness)
-        self._buffer: deque[tuple[float, np.ndarray, np.ndarray, str]] = deque(maxlen=maxlen)
+        # Cada entrada: (timestamp, landmarks_xy (21, 2), handedness)
+        self._buffer: deque[tuple[float, np.ndarray, str]] = deque(maxlen=maxlen)
 
-    def add(self, detection: HandDetection, letter_candidate: str) -> None:
-        """Agrega una deteccion al buffer.
-        
-        Solo guarda si la mano detectada coincide con la letra candidata
-        (usamos el handedness para validar consistencia).
-        """
+    def add(self, detection: HandDetection) -> None:
+        """Agrega una deteccion al buffer (sin filtro por letra)."""
         if detection is None:
             return
-        
-        finger_idx = MOTION_FINGER_TIP.get(letter_candidate)
-        if finger_idx is None:
-            return
-        
-        tip = detection.landmarks[finger_idx, :2]  # x, y
-        wrist = detection.landmarks[0, :2]
-        
         self._buffer.append((
             time.monotonic(),
-            tip.astype(np.float32),
-            wrist.astype(np.float32),
-            detection.handedness
+            detection.landmarks[:, :2].astype(np.float32),
+            detection.handedness,
         ))
 
     def clear(self) -> None:
@@ -99,22 +113,133 @@ class MotionBuffer:
     def is_ready(self, min_frames: int = MOTION_MIN_FRAMES) -> bool:
         return len(self._buffer) >= min_frames
 
-    def get_sequence(self) -> Optional[np.ndarray]:
-        """Devuelve la secuencia completa como array (N, 5): [t, tip_x, tip_y, wrist_x, wrist_y]."""
+    def get_sequence(self, letter: str) -> Optional[np.ndarray]:
+        """Secuencia (N, 6) [t, tip_x, tip_y, wrist_x, wrist_y, orient].
+
+        La punta depende de la letra (``config.MOTION_FINGER_TIP``); la
+        orientacion es el angulo del vector muneca -> MCP del dedo medio.
+        """
         if len(self._buffer) < MOTION_MIN_FRAMES:
             return None
-        seq = np.array([
-            [t, tip[0], tip[1], wrist[0], wrist[1]]
-            for t, tip, wrist, _ in self._buffer
-        ], dtype=np.float32)
-        return seq
+        finger_idx = config.MOTION_FINGER_TIP.get(letter)
+        if finger_idx is None:
+            return None
+        rows = []
+        for t, lm, _ in self._buffer:
+            wrist = lm[_WRIST]
+            orient = np.arctan2(
+                lm[_MCP_MIDDLE][1] - wrist[1], lm[_MCP_MIDDLE][0] - wrist[0]
+            )
+            tip = lm[finger_idx]
+            rows.append([t, tip[0], tip[1], wrist[0], wrist[1], orient])
+        return np.array(rows, dtype=np.float32)
+
+    def movement_score(self, letter: str | None = None) -> float:
+        """Puntaje de movimiento en unidades de tamaño de mano.
+
+        Combina las tres señales (punta, orientación, muñeca); sirve para
+        calibrar ``config.MOTION_MIN_MOVEMENT`` y para depuración.
+        """
+        n = len(self._buffer)
+        if n < MOTION_MIN_FRAMES:
+            return 0.0
+
+        scales = []
+        for _, lm, _ in self._buffer:
+            d = float(np.linalg.norm(lm[_MCP_MIDDLE] - lm[_WRIST]))
+            scales.append(max(d, 1e-6))
+        scale = float(np.mean(scales))
+
+        # 1) puntas relativas a la muneca (o la punta de una letra si se pide)
+        tips = (config.MOTION_FINGER_TIP.get(letter),) if letter in config.MOTION_FINGER_TIP else _ALL_FINGER_TIPS
+        max_diag = 0.0
+        for tip_idx in tips:
+            rel = np.array(
+                [lm[tip_idx] - lm[_WRIST] for _, lm, _ in self._buffer]
+            )
+            diag = float(np.linalg.norm(rel.max(axis=0) - rel.min(axis=0)))
+            max_diag = max(max_diag, diag)
+        d_tip = max_diag / scale
+
+        # 2) orientacion de la mano (rango en unidades de 90 grados)
+        orients = np.unwrap(np.array([
+            np.arctan2(lm[_MCP_MIDDLE][1] - lm[_WRIST][1],
+                       lm[_MCP_MIDDLE][0] - lm[_WRIST][0])
+            for _, lm, _ in self._buffer
+        ], dtype=np.float64))
+        d_orient = float(orients.max() - orients.min()) / (np.pi / 2)
+
+        # 3) traslacion de la muneca
+        wrists = np.array([lm[_WRIST] for _, lm, _ in self._buffer])
+        d_wrist = float(np.linalg.norm(wrists.max(axis=0) - wrists.min(axis=0))) / scale
+
+        return max(d_tip, d_orient, d_wrist)
+
+    def is_moving(self, min_movement: float | None = None) -> bool:
+        """True si en el buffer hubo movimiento real de la mano.
+
+        Tres senales (cualquiera supera el umbral, medido en unidades de
+        tamano de mano = distancia muneca -> MCP del dedo medio):
+
+        * desplazamiento de cualquier punta relativa a la muneca
+          (trazos de J, Z, X);
+        * rango de orientacion de la mano (balanceos de K, Q, Ñ);
+        * traslacion de la muneca en la imagen.
+
+        Con la mano quieta devuelve False y el clasificador estatico
+        gana siempre (anti falsos positivos).
+        """
+        if min_movement is None:
+            min_movement = config.MOTION_MIN_MOVEMENT
+        if len(self._buffer) < MOTION_MIN_FRAMES:
+            return False
+        return self.movement_score() >= min_movement
 
     def get_handedness(self) -> Optional[str]:
         if not self._buffer:
             return None
         # Usar el handedness mas frecuente en el buffer
-        handednesses = [h for _, _, _, h in self._buffer]
+        handednesses = [h for _, _, h in self._buffer]
         return max(set(handednesses), key=handednesses.count)
+
+
+# ----------------------------------------------------------------------
+# Decision hibrida: ¿cuando usar el clasificador de movimiento?
+# ----------------------------------------------------------------------
+def candidate_for(static_label: Optional[str]) -> Optional[str]:
+    """Letra dinamica cuyo trazo hay que analizar para una etiqueta estatica.
+
+    ``I -> J``, ``N -> Ñ``, ``G -> Q``; las propias dinamicas se mapean a
+    si mismas; cualquier otra letra no tiene trazo (devuelve None).
+    """
+    if not static_label:
+        return None
+    if static_label in config.MOTION_CANDIDATE_FOR_STATIC:
+        return config.MOTION_CANDIDATE_FOR_STATIC[static_label]
+    if static_label in config.MOTION_CLASSES:
+        return static_label
+    return None
+
+
+def should_use_motion(
+    static_label: Optional[str],
+    buffer: MotionBuffer,
+    min_frames: int = MOTION_MIN_FRAMES,
+    min_movement: float | None = None,
+) -> bool:
+    """Regla hibrida: activar el clasificador de movimiento.
+
+    Solo si: el buffer esta listo, la etiqueta estatica es candidata
+    (las 6 dinamicas + I, N, G) Y la mano se esta moviendo de verdad.
+    Con la mano quieta gana siempre el clasificador estatico.
+    """
+    if buffer is None or not buffer.is_ready(min_frames):
+        return False
+    if candidate_for(static_label) is None:
+        return False
+    if static_label not in config.MOTION_TRIGGER:
+        return False
+    return buffer.is_moving(min_movement)
 
 
 # ----------------------------------------------------------------------
@@ -124,13 +249,20 @@ def extract_trajectory_features(sequence: np.ndarray) -> np.ndarray:
     """Extrae features de una secuencia de movimiento.
     
     Entrada:
-        sequence: array (N, 5) con columnas [t, tip_x, tip_y, wrist_x, wrist_y]
+        sequence: array (N, 6) con columnas
+        [t, tip_x, tip_y, wrist_x, wrist_y, orient] (con N=5 se asume
+        orientacion ausente y se rellena en ceros).
     
     Salida:
         vector de features (MOTION_NUM_FEATURES,)
     """
     if sequence is None or len(sequence) < MOTION_MIN_FRAMES:
         return np.zeros(config.MOTION_NUM_FEATURES, dtype=np.float32)
+    sequence = np.asarray(sequence, dtype=np.float32)
+    if sequence.shape[1] == 5:
+        # Compatibilidad con secuencias antiguas sin orientacion
+        pad = np.zeros((sequence.shape[0], 1), dtype=np.float32)
+        sequence = np.hstack([sequence, pad])
     
     # Coordenadas relativas a la muneca (invariante a posicion de la mano)
     tip_rel = sequence[:, 1:3] - sequence[:, 3:5]  # (N, 2)
@@ -237,8 +369,21 @@ def extract_trajectory_features(sequence: np.ndarray) -> np.ndarray:
     # 9. Numero de frames en la secuencia
     features.append(float(len(sequence)))  # 1
     
-    # Total: 2+2+2 + 1+1+1 + 1+1+1+1 + 1 + 3+1+1 + 1 = 20 features
-    # Ajustar al numero esperado
+    # 10. Orientacion de la mano y traslacion de la muneca
+    # (K, Ñ y Q se mueven con la muneca: sin esto sus trazos serian
+    # invisibles para el clasificador)
+    orient = np.unwrap(sequence[:, 5].astype(np.float64))  # des-envolver ±pi
+    features.append(float(orient.max() - orient.min()))    # rango de giro (1)
+    features.append(float(np.std(orient)))                 # dispersión (1)
+    features.append(float(orient[-1] - orient[0]))         # giro neto con signo (1)
+    orient_dt = np.diff(orient)
+    orient_dt = orient_dt / np.maximum(np.diff(t), 1e-6)
+    features.append(float(np.mean(np.abs(orient_dt))))     # vel. angular media (1)
+    wrist_xy = sequence[:, 3:5]
+    wrist_range = wrist_xy.max(axis=0) - wrist_xy.min(axis=0)
+    features.extend(float(v) for v in wrist_range)         # traslacion x,y (2)
+    
+    # Total: 23 originales + 6 nuevas = 29 features
     features_arr = np.array(features, dtype=np.float32)
     
     if len(features_arr) != config.MOTION_NUM_FEATURES:
@@ -255,7 +400,7 @@ def extract_trajectory_features(sequence: np.ndarray) -> np.ndarray:
 # Clasificador de movimiento
 # ----------------------------------------------------------------------
 class MotionClassifier:
-    """Clasificador ligero para distinguir J de Z por su trayectoria."""
+    """Clasificador ligero para las 6 letras dinamicas (J, K, Ñ, Q, X, Z)."""
     
     def __init__(self, model_type: str = "svm"):
         self.model_type = model_type
@@ -285,7 +430,7 @@ class MotionClassifier:
     def train(self, X: np.ndarray, y: np.ndarray, verbose: bool = True) -> dict:
         """Entrena el clasificador de movimiento."""
         if len(np.unique(y)) < 2:
-            raise ValueError("Se necesitan al menos 2 clases (J y Z) para entrenar.")
+            raise ValueError("Se necesitan al menos 2 clases dinamicas para entrenar.")
         
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=config.RANDOM_STATE, stratify=y
@@ -319,7 +464,7 @@ class MotionClassifier:
         }
         
         if verbose:
-            print(f"MotionClassifier ({self.model_type}):")
+            print(f"MotionClassifier ({self.model_type}) - {len(self.classes_)} clases:")
             print(f"  CV accuracy: {np.mean(cv_scores):.3f} (+-{np.std(cv_scores):.3f})")
             print(f"  Test accuracy: {test_acc:.3f}")
             print(report)
@@ -327,7 +472,7 @@ class MotionClassifier:
         return self.metrics_
     
     def predict(self, features: np.ndarray) -> tuple[str, float]:
-        """Predice la letra (J o Z) a partir de features de trayectoria.
+        """Predice la letra dinamica a partir de features de trayectoria.
         
         Devuelve (etiqueta, probabilidad).
         """
@@ -447,7 +592,7 @@ def load_motion_dataset(path: str | Path = config.MOTION_DATASET_PATH) -> pd.Dat
 
 
 def is_motion_csv(path: str | Path) -> bool:
-    """Detecta si un CSV tiene el esquema de movimiento (columnas m0..m19)."""
+    """Detecta si un CSV tiene el esquema de movimiento (m0..m28 + label)."""
     path = Path(path)
     if not path.exists() or path.stat().st_size == 0:
         return False
@@ -472,8 +617,8 @@ def merge_motion_csvs(
 ) -> pd.DataFrame:
     """Une varios CSV de movimiento en el dataset de movimiento final.
 
-    Valida el esquema de cada archivo y las etiquetas (solo J/Z) antes
-    de guardar; devuelve el dataset ya validado.
+    Valida el esquema de cada archivo y las etiquetas (solo letras
+    dinamicas: J, K, Ñ, Q, X, Z) antes de guardar.
     """
     if not paths:
         raise ValueError("No hay CSV de movimiento para unir.")
@@ -505,7 +650,7 @@ def train_motion_model(
     out_path: str | Path = config.MOTION_MODEL_PATH,
     verbose: bool = True,
 ) -> dict:
-    """Entrena y guarda el clasificador de movimiento J/Z.
+    """Entrena y guarda el clasificador de movimiento (J, K, Ñ, Q, X, Z).
     
     Devuelve un bundle con el modelo y metricas (compatible con load_classifier).
     """

@@ -16,13 +16,13 @@ if not exist "models\model.joblib" (
     %PY% src\train.py --data data\samples\hand_landmarks_sample.csv || goto :error
 )
 
-echo [1b/3] Verificando modelo de movimiento (J/Z) [opcional]...
+echo [1b/3] Verificando modelo de movimiento (J, K, Ñ, Q, X, Z) [opcional]...
 set "ADD_MOTION="
 if exist "models\motion_model.joblib" (
     echo      Modelo de movimiento encontrado.
     set ADD_MOTION=--add-data "models\motion_model.joblib;models"
 ) else (
-    echo      No existe models\motion_model.joblib - opcional: J/Z usaran solo postura estatica.
+    echo      No existe models\motion_model.joblib - opcional: las 6 letras dinamicas usaran solo postura estatica.
 )
 
 echo [2/3] Verificando modelo de landmarks...

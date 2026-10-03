@@ -13,9 +13,9 @@ Teclas (modo estatico):
     0       = activar/desactivar captura automatica
     ESC     = guardar y salir
 
-Modo movimiento (para J y Z):
+Modo movimiento (6 letras dinamicas: J, K, Ñ, Q, X, Z):
     python src/collect_data.py --person Cristhian --motion
-    Teclas: J/Z = seleccionar letra | ESPACIO = iniciar/parar trazo | M = cancelar | ESC = salir
+    Teclas: J K N(Ñ) Q X Z = letra | ESPACIO = iniciar/parar trazo | M = cancelar | ESC = salir
 
 Union de todos los CSV en el dataset final:
     python src/collect_data.py --merge
@@ -40,6 +40,7 @@ from motion import (
     MOTION_BUFFER_SIZE,
     MOTION_MIN_FRAMES,
     MOTION_CSV_COLUMNS,
+    MOTION_TRACE_HINTS,
     extract_trajectory_features,
     make_motion_sample_row,
     merge_motion_csvs,
@@ -180,10 +181,10 @@ def collection_loop(args) -> None:
 
 
 # ----------------------------------------------------------------------
-# Captura de movimiento para J y Z
+# Captura de movimiento para las 6 letras dinamicas (J, K, Ñ, Q, X, Z)
 # ----------------------------------------------------------------------
 def motion_collection_loop(args) -> None:
-    """Bucle interactivo de captura de trayectorias para J y Z."""
+    """Bucle interactivo de captura de trayectorias para las letras dinamicas."""
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{args.person}_motion.csv"
@@ -194,13 +195,19 @@ def motion_collection_loop(args) -> None:
     frames = 0
     hands_detected = 0
 
+    # Tecla de cada letra dinamica (ñ acepta tambien n/N y codes 241/209)
+    key_map = {
+        ord("j"): "J", ord("k"): "K", ord("n"): "Ñ", ord("q"): "Q",
+        ord("x"): "X", ord("z"): "Z", 241: "Ñ", 209: "Ñ",
+    }
+
     print("=" * 60)
-    print(" RECOLECCION DE MOVIMIENTO - SignAI (J y Z)")
+    print(" RECOLECCION DE MOVIMIENTO - SignAI (J, K, Ñ, Q, X, Z)")
     print("=" * 60)
     print(f" Persona      : {args.person}")
     print(f" Salida       : {out_path}")
     print(f" Meta/letra   : {target_per_class} secuencias")
-    print(" Teclas: J/Z = seleccionar letra | ESPACIO = iniciar captura de trazo")
+    print(" Teclas: J K N(Ñ) Q X Z = letra | ESPACIO = iniciar trazo")
     print("       M = cancelar captura actual | ESC = salir")
     print("=" * 60)
 
@@ -230,8 +237,9 @@ def motion_collection_loop(args) -> None:
             detection = detector.detect(frame, timestamp_ms=int(time.monotonic() * 1000))
 
             # Agregar al buffer si estamos capturando movimiento
+            # (add SIN filtro por letra: guarda los 21 landmarks del frame)
             if capturing_motion and detection is not None:
-                motion_buffer.add(detection, current_label)
+                motion_buffer.add(detection)
 
             # Panel de estado
             if capturing_motion:
@@ -241,7 +249,7 @@ def motion_collection_loop(args) -> None:
             else:
                 status = f"Letra: {current_label}  ({counts[current_label]}/{target_per_class})"
                 color = (0, 255, 0) if detection is not None else (0, 0, 255)
-                sub_text = f"ESPACIO=iniciar trazo  J/Z=cambiar  |  mano: {'OK' if detection else 'NO'}  |  {args.person}"
+                sub_text = f"ESPACIO=iniciar trazo  J K N Q X Z=cambiar  |  mano: {'OK' if detection else 'NO'}  |  {args.person}"
 
             if detection is not None:
                 hands_detected += 1
@@ -266,29 +274,25 @@ def motion_collection_loop(args) -> None:
                     2 if highlight else 1, cv2.LINE_AA,
                 )
 
-            # Pista de como hacer el trazo
-            if current_label == "J":
-                hint = "J: Menique estirado, traza una J en el aire (gancho hacia adentro)"
-            else:
-                hint = "Z: Indice estirado, traza una Z en el aire (zigzag horizontal)"
+            # Pista de como hacer el trazo (MOTION_TRACE_HINTS, 6 letras)
+            hint = MOTION_TRACE_HINTS.get(current_label, "")
             cv2.rectangle(frame, (8, 424), (frame.shape[1] - 8, 472), (20, 20, 20), -1)
             cv2.putText(
                 frame, hint, (18, 455),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 220, 255), 1, cv2.LINE_AA,
             )
 
-            cv2.imshow("SignAI - recoleccion de movimiento (J/Z)", frame)
+            cv2.imshow("SignAI - trazos dinamicos (J K Ñ Q X Z)", frame)
             key = cv2.waitKey(1) & 0xFF
 
             if key == 27:  # ESC
                 break
 
-            if key in (ord("j"), ord("J")):
-                current_label = "J"
-                print(f"  letra {current_label}: trazo de J (gancho con menique)")
-            elif key in (ord("z"), ord("Z")):
-                current_label = "Z"
-                print(f"  letra {current_label}: trazo de Z (zigzag con indice)")
+            # minusculas/mayusculas: key | 0x20 (N mayuscula -> clave "n")
+            selected = key_map.get(key, key_map.get(key | 0x20))
+            if selected:
+                current_label = selected
+                print(f"  letra {current_label}: {MOTION_TRACE_HINTS.get(current_label, '')}")
 
             if key == ord(" "):  # ESPACIO - iniciar/parar captura de trazo
                 if not capturing_motion:
@@ -304,7 +308,7 @@ def motion_collection_loop(args) -> None:
                     capturing_motion = False
                     duration = time.perf_counter() - motion_start_time
                     if motion_buffer.is_ready(MOTION_MIN_FRAMES):
-                        seq = motion_buffer.get_sequence()
+                        seq = motion_buffer.get_sequence(current_label)
                         features = extract_trajectory_features(seq)
                         row = make_motion_sample_row(features, current_label, person=args.person)
                         save_motion_samples(row, out_path)
@@ -323,7 +327,7 @@ def motion_collection_loop(args) -> None:
             # Auto-guardar si el buffer se llena
             if capturing_motion and len(motion_buffer._buffer) >= MOTION_BUFFER_SIZE:
                 capturing_motion = False
-                seq = motion_buffer.get_sequence()
+                seq = motion_buffer.get_sequence(current_label)
                 features = extract_trajectory_features(seq)
                 row = make_motion_sample_row(features, current_label, person=args.person)
                 save_motion_samples(row, out_path)
@@ -332,7 +336,7 @@ def motion_collection_loop(args) -> None:
                 motion_buffer.clear()
 
             if all(counts[label] >= target_per_class for label in config.MOTION_CLASSES):
-                print("  meta alcanzada para J y Z. Pulsa ESC para guardar.")
+                print("  meta alcanzada para las 6 letras. Pulsa ESC para guardar.")
                 # No auto=False aqui porque no hay modo auto en movimiento
 
     finally:
@@ -367,7 +371,7 @@ def do_merge(
     """Une todos los CSV de data/collected en los datasets finales.
 
     Clasifica cada CSV por su esquema: los estaticos (63 features) van a
-    ``output`` y los de movimiento (m0..m19, J/Z) a ``motion_output``.
+    ``output`` y los de movimiento (m0..m28, letras dinamicas) a ``motion_output``.
     Los archivos que no coinciden con ninguno se ignoran con aviso.
     """
     out_dir = Path(out_dir)
@@ -414,7 +418,7 @@ def do_merge(
         ok = True
 
     if motion_paths:
-        print(f"Uniendo {len(motion_paths)} CSV de movimiento (J/Z):")
+        print(f"Uniendo {len(motion_paths)} CSV de movimiento (dinamicas):")
         for p in motion_paths:
             print(f"  - {p.name}")
         mdf = merge_motion_csvs(motion_paths, motion_output)
@@ -439,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(config.DATA_DIR / "collected"), help="carpeta de salida")
     parser.add_argument("--merge", action="store_true", help="unir todos los CSV y salir")
     parser.add_argument("--output", default=str(config.DATASET_PATH), help="destino del --merge")
-    parser.add_argument("--motion", action="store_true", help="modo captura de movimiento para J y Z")
+    parser.add_argument("--motion", action="store_true", help="modo captura de movimiento (J, K, Ñ, Q, X, Z)")
     args = parser.parse_args(argv)
 
     try:

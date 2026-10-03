@@ -7,12 +7,14 @@ vector de **63 coordenadas (x, y, z)** y un **Random Forest** clasifica la
 seña, mostrando el resultado en pantalla con las 3 opciones más probables,
 confianza y esqueleto dibujado.
 
-> **Reconocimiento híbrido para J y Z:** Las letras **J** y **Z** en LSM
-> requieren un movimiento (trazo en el aire). El sistema implementa un
-> **clasificador de segundo nivel** que analiza la trayectoria del dedo
-> relevante (menique para J, índice para Z) a lo largo de ~20 frames para
-> distinguir J de I y Z de otras letras con índice estirado. Ver
-> `docs/abecedario_lsm.md` para la guía de captura de movimiento.
+> **Reconocimiento híbrido (6 letras dinámicas):** El alfabeto LSM tiene
+> 6 letras que además implican movimiento — **J, K, Ñ, Q, X, Z** — cuyas
+> posturas base son ambiguas (J≈I, Ñ≈N, Q≈G). El sistema implementa un
+> **clasificador de segundo nivel (SVM)** que analiza la trayectoria de la
+> mano (~20 frames: punta del dedo, orientación y traslación de la muñeca)
+> **solo cuando hay movimiento real ≥ umbral** (`MOTION_MIN_MOVEMENT`),
+> evitando falsos positivos con la mano quieta. Ver
+> `docs/abecedario_lsm.md` para los trazos y la guía de captura.
 
 | | |
 |---|---|
@@ -119,12 +121,13 @@ Teclas: **A–Z** elegir letra (se muestra cómo formarla en pantalla) ·
 **ESPACIO** capturar · **0** captura automática
 · **ESC** guardar y salir. Cada integrante genera `data/collected/<nombre>.csv`
 
-**Modo movimiento (trazos J y Z):**
+**Modo movimiento (trazos J, K, Ñ, Q, X, Z):**
 ```powershell
 .\.venv\Scripts\python.exe src\collect_data.py --person Alan --motion
 ```
 
-Teclas: **J/Z** seleccionar letra · **ESPACIO** iniciar/parar captura de trazo
+Teclas: **J K N(Ñ) Q X Z** seleccionar letra (en pantalla se muestra el
+trazo) · **ESPACIO** iniciar/parar captura de trazo
 · **M** cancelar trazo actual · **ESC** salir.
 Cada integrante genera `data/collected/<nombre>_motion.csv` con ~30-50 secuencias por letra.
 
@@ -144,15 +147,21 @@ Unión de todos los CSV:
 .\.venv\Scripts\python.exe src\train.py
 ```
 
-**Modelo de movimiento (J/Z):**
+**Modelo de movimiento (6 letras dinámicas):**
 ```powershell
 .\.venv\Scripts\python.exe src\train.py --motion
 # O con Random Forest:
 .\.venv\Scripts\python.exe src\train.py --motion --motion-model rf
 ```
 
-El modelo de movimiento se guarda en `models/motion_model.joblib` y se usa
-automáticamente por la app en tiempo real cuando detecta candidatas I/J/Z.
+Si aún no hay capturas reales, `--motion` usa automáticamente los trazos
+sintéticos de `data/samples/motion_landmarks_sample.csv` (regenerables con
+`python scripts/make_sample_motion_data.py --verify`).
+
+El modelo se guarda en `models/motion_model.joblib` y la app lo usa en
+tiempo real cuando la etiqueta estática es candidata (**J, K, Ñ, Q, X, Z,
+I, N o G**) **y** la mano se está moviendo de verdad; si no, manda el
+clasificador estático.
 
 ### 4.6 Ejecutable sin Python (`.exe`)
 
@@ -177,13 +186,14 @@ SignAI/
 │   ├── train.py               # RF + SVM + MLP + clasificador de movimiento
 │   ├── predict.py             # predicción por imagen/video/CSV
 │   ├── app.py                 # aplicación en tiempo real (híbrida estática+movimiento)
-│   └── motion.py              # NUEVO: buffer, features y clasificador de trazo J/Z
+│   └── motion.py              # buffer, features de trayectoria y clasificador (6 letras)
 ├── scripts/
 │   ├── download_model.py      # descarga el modelo de landmarks
-│   ├── make_sample_data.py    # regenera los datos de prueba
+│   ├── make_sample_data.py    # regenera los datos de prueba (estáticos)
+│   ├── make_sample_motion_data.py  # regenera los trazos sintéticos (J,K,Ñ,Q,X,Z)
 │   └── build_exe.bat          # construye el .exe (incluye motion_model.joblib)
-├── tests/                     # 56 pruebas automatizadas (pytest)
-│   ├── test_motion.py         # NUEVO: tests del módulo de movimiento
+├── tests/                     # 84 pruebas automatizadas (pytest)
+│   ├── test_motion.py         # tests del módulo de movimiento (incl. umbral y gating)
 │   └── ...
 ├── models/                    # hand_landmarker.task + model.joblib + motion_model.joblib
 ├── data/
@@ -200,10 +210,13 @@ SignAI/
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-**56 pruebas** (36 originales + 20 nuevas de movimiento):
+**84 pruebas** (36 estáticas + 48 de movimiento/híbrido):
 - Normalización de landmarks, validación del dataset, entrenamiento estático
 - Predicción, suavizado de la app y modos sin cámara
-- **NUEVO:** MotionBuffer, extracción de features de trayectoria, MotionClassifier (SVM/RF), dataset de movimiento, integración con app
+- MotionBuffer (sin filtro de letra: regresión I→J), features de trayectoria
+  (29 = 23 + 6 de orientación/muñeca), **umbral de movimiento anti-falsos
+  positivos**, gating `should_use_motion`, 6 clases dinámicas, merge de CSV
+  y respaldo con datos sintéticos
 
 ## 7. Créditos y licencias de las dependencias
 

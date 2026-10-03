@@ -37,8 +37,8 @@ SAMPLE_DATASET_PATH = SAMPLES_DIR / "hand_landmarks_sample.csv"
 
 # ---------------------------------------------------------------------------
 # Clases del proyecto: abecedario de la LSM (dactilologia A-Z)
-# J y Z requieren movimiento en LSM; se capturan con su postura estatica
-# base (limitacion documentada en README y docs/abecedario_lsm.md).
+# 6 letras (J, K, Ñ, Q, X, Z) son dinamicas: se capturan con su postura
+# estatica base y se refinan con el clasificador de movimiento (MOTION_*).
 # ---------------------------------------------------------------------------
 CLASSES: list[str] = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
 
@@ -110,25 +110,49 @@ MLP_PARAMS: dict = {
 }
 
 # ---------------------------------------------------------------------------
-# Reconocimiento de movimiento para J y Z (letras con trazo en LSM)
+# Reconocimiento de movimiento: letras dinamicas del abecedario LSM
 # ---------------------------------------------------------------------------
-# Letras que requieren analisis de trayectoria
-MOTION_CLASSES: list[str] = ["J", "Z"]
+# El alfabeto LSM (27 letras) tiene 21 señas estaticas y 6 dinamicas que
+# ademas implican movimiento de la mano o la muneca: J, K, Ñ, Q, X, Z.
+# Fuentes: dataset del alfabeto LSM (ScienceDirect, 2026, "static and
+# dynamic signs for the Mexican Sign Language alphabet") y Manos con voz
+# (Fleischmann y Gonzalez Perez, 2011).
+MOTION_CLASSES: list[str] = ["J", "K", "Ñ", "Q", "X", "Z"]
 
-# Landmark de la punta del dedo relevante para cada letra con movimiento
-# J -> menique (landmark 20), Z -> indice (landmark 8)
-MOTION_FINGER_TIP: dict[str, int] = {"J": 20, "Z": 8}
+# Landmark de la punta del dedo que dibuja/acompaña el trazo de cada letra
+# (20 = meñique para J; 8 = indice para el resto).
+MOTION_FINGER_TIP: dict[str, int] = {"J": 20, "K": 8, "Ñ": 8, "Q": 8, "X": 8, "Z": 8}
+
+# Etiquetas ESTATICAS que, junto con las dinamicas, disparan el analisis
+# de movimiento: I se lee J (mismo meñique), N se lee Ñ (Ñ = N con
+# balanceo) y G se lee Q (Q = G hacia abajo con pivote).
+MOTION_TRIGGER: list[str] = MOTION_CLASSES + ["I", "N", "G"]
+
+# Equivalencia etiqueta estatica -> letra dinamica cuyo trazo hay que
+# analizar con la punta indicada.
+MOTION_CANDIDATE_FOR_STATIC: dict[str, str] = {"I": "J", "N": "Ñ", "G": "Q"}
 
 # Tamaño del buffer de frames para capturar la trayectoria
 MOTION_BUFFER_SIZE = 20
 MOTION_MIN_FRAMES = 10  # minimo frames para features validos
 
+# Umbral de movimiento (en unidades de tamaño de mano): por debajo se
+# considera postura quieta y NO se invoca al clasificador de movimiento.
+# Evita falsos positivos de las letras dinamicas.
+MOTION_MIN_MOVEMENT = 0.30
+# Confianza minima del clasificador de movimiento para reemplazar al
+# clasificador estatico.
+MOTION_MIN_CONFIDENCE = 0.60
+
 # Numero de features de trayectoria extraidas
-MOTION_NUM_FEATURES = 20
+# (23 originales de la punta + 6 de orientacion/traduccion de la muneca,
+# necesarias para K, Ñ y Q que se mueven con la muneca)
+MOTION_NUM_FEATURES = 29
 
 # Rutas del modelo y dataset de movimiento
 MOTION_DATASET_PATH = DATA_DIR / "motion_landmarks.csv"
 MOTION_MODEL_PATH = MODELS_DIR / "motion_model.joblib"
+SAMPLE_MOTION_DATASET_PATH = SAMPLES_DIR / "motion_landmarks_sample.csv"
 
 # Modelo de movimiento por defecto
 MOTION_MODEL_TYPE = "svm"  # "svm" o "rf"
