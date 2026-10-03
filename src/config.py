@@ -149,6 +149,9 @@ MOTION_MIN_CONFIDENCE = 0.60
 # necesarias para K, Ñ y Q que se mueven con la muneca)
 MOTION_NUM_FEATURES = 29
 
+# Version 2: coordenadas en unidades de mano y tiempos relativos float64.
+MOTION_FEATURE_VERSION = 2
+
 # Rutas del modelo y dataset de movimiento
 MOTION_DATASET_PATH = DATA_DIR / "motion_landmarks.csv"
 MOTION_MODEL_PATH = MODELS_DIR / "motion_model.joblib"

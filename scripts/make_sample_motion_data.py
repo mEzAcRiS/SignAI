@@ -32,6 +32,7 @@ from motion import (  # noqa: E402
     MotionClassifier,
     extract_trajectory_features,
     make_motion_sample_row,
+    normalize_motion_sequence,
     split_motion_xy,
 )
 
@@ -174,9 +175,9 @@ def _pack(
         wrist[:, 0] = 1.0 - wrist[:, 0]
         orient = np.pi - orient
 
-    return np.stack([
+    return normalize_motion_sequence(np.stack([
         t, tip[:, 0], tip[:, 1], wrist[:, 0], wrist[:, 1], orient,
-    ], axis=1).astype(np.float32)
+    ], axis=1))
 
 
 _GENERATORS = {

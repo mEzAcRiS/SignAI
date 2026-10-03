@@ -396,7 +396,7 @@ def do_merge(
             continue
         if set(config.FEATURE_COLUMNS) <= cols:
             static_paths.append(p)
-        elif set(MOTION_CSV_COLUMNS) <= cols:
+        elif (set(MOTION_CSV_COLUMNS) - {"feature_version"}) <= cols:
             motion_paths.append(p)
         else:
             skipped.append(p)

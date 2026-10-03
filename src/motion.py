@@ -80,6 +80,27 @@ class MotionSample:
     timestamp: float
 
 
+def normalize_motion_sequence(sequence: np.ndarray, hand_scale: float = 1.0) -> np.ndarray:
+    """Tiempo relativo y coordenadas en unidades de mano, en float64.
+
+    hand_scale es la distancia media muneca-MCP medio en la secuencia.
+    Los generadores sinteticos ya usan estas unidades (escala 1).
+    Se conserva la traslacion de la muneca respecto al primer fotograma.
+    """
+    seq = np.asarray(sequence, dtype=np.float64).copy()
+    if seq.ndim != 2 or seq.shape[1] not in (5, 6) or not len(seq):
+        raise ValueError("Se esperaba una secuencia no vacia (N, 5 o 6).")
+    if not np.isfinite(seq).all() or not np.isfinite(hand_scale) or hand_scale <= 1e-6:
+        raise ValueError("La secuencia y la escala de mano deben ser validas y finitas.")
+    seq[:, 0] -= seq[0, 0]
+    if np.any(np.diff(seq[:, 0]) <= 0):
+        raise ValueError("Los tiempos deben ser estrictamente crecientes.")
+    origin = seq[0, 3:5].copy()
+    seq[:, 1:3] = (seq[:, 1:3] - origin) / hand_scale
+    seq[:, 3:5] = (seq[:, 3:5] - origin) / hand_scale
+    return seq
+
+
 class MotionBuffer:
     """Buffer circular con los ultimos N frames detectados de la mano.
 
@@ -103,7 +124,7 @@ class MotionBuffer:
             return
         self._buffer.append((
             time.monotonic(),
-            detection.landmarks[:, :2].astype(np.float32),
+            detection.landmarks[:, :2].astype(np.float64),
             detection.handedness,
         ))
 
@@ -116,8 +137,8 @@ class MotionBuffer:
     def get_sequence(self, letter: str) -> Optional[np.ndarray]:
         """Secuencia (N, 6) [t, tip_x, tip_y, wrist_x, wrist_y, orient].
 
-        La punta depende de la letra (``config.MOTION_FINGER_TIP``); la
-        orientacion es el angulo del vector muneca -> MCP del dedo medio.
+        Coordenadas en unidades de mano y segundos desde el primer frame.
+        La orientacion es el angulo del vector muneca -> MCP del dedo medio.
         """
         if len(self._buffer) < MOTION_MIN_FRAMES:
             return None
@@ -132,7 +153,13 @@ class MotionBuffer:
             )
             tip = lm[finger_idx]
             rows.append([t, tip[0], tip[1], wrist[0], wrist[1], orient])
-        return np.array(rows, dtype=np.float32)
+        scale = float(np.mean([
+            np.linalg.norm(lm[_MCP_MIDDLE] - lm[_WRIST])
+            for _, lm, _ in self._buffer
+        ]))
+        if scale <= 1e-6:
+            return None
+        return normalize_motion_sequence(rows, hand_scale=scale)
 
     def movement_score(self, letter: str | None = None) -> float:
         """Puntaje de movimiento en unidades de tamaño de mano.
@@ -186,8 +213,7 @@ class MotionBuffer:
         * rango de orientacion de la mano (balanceos de K, Q, Ñ);
         * traslacion de la muneca en la imagen.
 
-        Con la mano quieta devuelve False y el clasificador estatico
-        gana siempre (anti falsos positivos).
+        Con la mano quieta devuelve False; la app no confirma letras dinamicas.
         """
         if min_movement is None:
             min_movement = config.MOTION_MIN_MOVEMENT
@@ -231,7 +257,7 @@ def should_use_motion(
 
     Solo si: el buffer esta listo, la etiqueta estatica es candidata
     (las 6 dinamicas + I, N, G) Y la mano se esta moviendo de verdad.
-    Con la mano quieta gana siempre el clasificador estatico.
+    Con la mano quieta no se autoriza ninguna prediccion dinamica.
     """
     if buffer is None or not buffer.is_ready(min_frames):
         return False
@@ -250,26 +276,25 @@ def extract_trajectory_features(sequence: np.ndarray) -> np.ndarray:
     
     Entrada:
         sequence: array (N, 6) con columnas
-        [t, tip_x, tip_y, wrist_x, wrist_y, orient] (con N=5 se asume
-        orientacion ausente y se rellena en ceros).
+        [t, tip_x, tip_y, wrist_x, wrist_y, orient], en unidades de mano.
+        Con 5 columnas se asume orientacion ausente y se rellena en ceros.
     
     Salida:
         vector de features (MOTION_NUM_FEATURES,)
     """
     if sequence is None or len(sequence) < MOTION_MIN_FRAMES:
         return np.zeros(config.MOTION_NUM_FEATURES, dtype=np.float32)
-    sequence = np.asarray(sequence, dtype=np.float32)
+    sequence = normalize_motion_sequence(sequence)
     if sequence.shape[1] == 5:
         # Compatibilidad con secuencias antiguas sin orientacion
-        pad = np.zeros((sequence.shape[0], 1), dtype=np.float32)
+        pad = np.zeros((sequence.shape[0], 1), dtype=np.float64)
         sequence = np.hstack([sequence, pad])
     
     # Coordenadas relativas a la muneca (invariante a posicion de la mano)
     tip_rel = sequence[:, 1:3] - sequence[:, 3:5]  # (N, 2)
     
-    # Tiempo (normalizado a 0..1)
+    # Segundos relativos en float64: no perder intervalos con relojes grandes.
     t = sequence[:, 0]
-    t_norm = (t - t[0]) / max(t[-1] - t[0], 1e-6)
     
     features = []
     
@@ -321,7 +346,7 @@ def extract_trajectory_features(sequence: np.ndarray) -> np.ndarray:
     features.append(tortuosity)  # 1
     
     # 5. Correlacion x-y (forma del trazo: linea vs curva)
-    if len(tip_rel) > 1:
+    if np.all(std_xy > 1e-12):
         corr = np.corrcoef(tip_rel[:, 0], tip_rel[:, 1])[0, 1]
         if np.isnan(corr):
             corr = 0.0
@@ -503,6 +528,7 @@ class MotionClassifier:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         bundle = {
+            "feature_version": config.MOTION_FEATURE_VERSION,
             "pipeline": self.pipeline,
             "model_type": self.model_type,
             "classes": self.classes_.tolist() if self.classes_ is not None else [],
@@ -520,6 +546,8 @@ class MotionClassifier:
         if not path.exists():
             raise FileNotFoundError(f"No existe el modelo de movimiento '{path}'.")
         bundle = joblib.load(path)
+        if bundle.get("feature_version") != config.MOTION_FEATURE_VERSION:
+            raise ValueError("Modelo de movimiento antiguo: reentrena con python src/train.py --motion.")
         clf = cls(model_type=bundle.get("model_type", "svm"))
         clf.pipeline = bundle["pipeline"]
         clf.classes_ = np.array(bundle["classes"])
@@ -532,7 +560,7 @@ class MotionClassifier:
 # Dataset de movimiento (CSV con features de trayectoria)
 # ----------------------------------------------------------------------
 MOTION_FEATURE_COLUMNS = [f"m{i}" for i in range(config.MOTION_NUM_FEATURES)]
-MOTION_CSV_COLUMNS = ["label", "persona"] + MOTION_FEATURE_COLUMNS
+MOTION_CSV_COLUMNS = ["label", "persona", "feature_version"] + MOTION_FEATURE_COLUMNS
 
 
 def make_motion_sample_row(
@@ -545,6 +573,7 @@ def make_motion_sample_row(
     if features.size != config.MOTION_NUM_FEATURES:
         raise ValueError(f"Se esperaban {config.MOTION_NUM_FEATURES} features, se recibieron {features.size}.")
     row = {
+        "feature_version": config.MOTION_FEATURE_VERSION,
         "label": str(label),
         "persona": person,
     }
@@ -559,7 +588,7 @@ def save_motion_samples(
     """Guarda muestras de movimiento en CSV (agrega si existe)."""
     path = Path(path)
     if path.exists():
-        existing = pd.read_csv(path)
+        existing = load_motion_dataset(path)
         combined = pd.concat([existing, samples], ignore_index=True)
     else:
         combined = samples
@@ -576,6 +605,11 @@ def load_motion_dataset(path: str | Path = config.MOTION_DATASET_PATH) -> pd.Dat
     df = pd.read_csv(path)
     if df.empty:
         raise ValueError(f"El dataset de movimiento '{path}' esta vacio.")
+    if "feature_version" not in df or not df["feature_version"].eq(config.MOTION_FEATURE_VERSION).all():
+        raise ValueError(
+            "Dataset de movimiento antiguo o incompatible: vuelve a capturar las "
+            "secuencias reales o regenera las sinteticas con scripts/make_sample_motion_data.py."
+        )
     
     # Validar columnas
     missing = [c for c in MOTION_CSV_COLUMNS if c not in df.columns]
@@ -600,7 +634,9 @@ def is_motion_csv(path: str | Path) -> bool:
         cols = set(pd.read_csv(path, nrows=0).columns)
     except Exception:
         return False
-    return set(MOTION_CSV_COLUMNS) <= cols
+    # Reconocer tambien CSV antiguos para que la carga explique que deben
+    # recapturarse, en lugar de ignorarlos y entrenar con datos sinteticos.
+    return {"label", "persona", *MOTION_FEATURE_COLUMNS} <= cols
 
 
 def find_motion_csvs(out_dir: str | Path) -> list[Path]:
@@ -626,7 +662,7 @@ def merge_motion_csvs(
     for p in paths:
         if not is_motion_csv(p):
             raise ValueError(f"'{Path(p).name}' no es un CSV de movimiento.")
-        frames.append(pd.read_csv(p))
+        frames.append(load_motion_dataset(p))
     combined = pd.concat(frames, ignore_index=True)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -105,7 +105,7 @@ def run_on_frames(
         motion_clf = load_motion_classifier()
         print(f"Clasificador de movimiento cargado: {motion_clf.model_type.upper()}")
     except FileNotFoundError:
-        print("Clasificador de movimiento no encontrado (opcional). Usando solo clasificador estatico.")
+        print("Clasificador de movimiento no encontrado. Las letras dinamicas no se confirmaran.")
     except Exception as e:
         print(f"Advertencia: no se pudo cargar el clasificador de movimiento: {e}")
     
@@ -152,42 +152,40 @@ def run_on_frames(
                         motion_features = extract_trajectory_features(seq)
                         motion_label, motion_conf = motion_clf.predict(motion_features)
                         # Si el clasificador de movimiento esta muy confiado, usarlo
-                        if motion_conf >= config.MOTION_MIN_CONFIDENCE:
+                        if motion_label in config.MOTION_CLASSES and motion_conf >= config.MOTION_MIN_CONFIDENCE:
                             final_label = motion_label
                             final_confidence = motion_conf
                             motion_used = True
-                            # No agregar el raw_label al smoother, usamos el refinado
-                        else:
-                            # Movimiento no confiado, usar el estatico con suavizado
-                            smoothed = smoother.update(raw_label, confidence)
-                            if smoothed is not None:
-                                final_label = smoothed
-                                final_confidence = confidence
+                            smoother.reset()
+
+                if not motion_used:
+                    if raw_label in config.MOTION_CLASSES:
+                        # Una postura dinamica no es una letra confirmada. Tampoco
+                        # conservar votos de la letra anterior mientras se espera.
+                        smoother.reset()
                     else:
                         smoothed = smoother.update(raw_label, confidence)
                         if smoothed is not None:
                             final_label = smoothed
                             final_confidence = confidence
-                else:
-                    # Clasificacion estatica normal con suavizado
-                    smoothed = smoother.update(raw_label, confidence)
-                    if smoothed is not None:
-                        final_label = smoothed
-                        final_confidence = confidence
                 
-                counter[raw_label] += 1
-                if confidence >= config.CONFIDENCE_THRESHOLD:
+                if final_label is not None:
+                    counter[final_label] += 1
+                if final_label is not None and final_confidence >= config.CONFIDENCE_THRESHOLD:
                     confident_count += 1
 
                 # Top-3 de predicciones (con 26 clases ayuda a ver alternativas)
-                sub_text = "  ".join(f"{l}:{c:.0%}" for l, c in tops)
+                sub_text = "Posturas: " + "  ".join(f"{l}:{c:.0%}" for l, c in tops)
                 if motion_used:
                     sub_text += f"  |  MOTION: {final_label}({final_confidence:.0%})"
                 if final_label is not None:
                     label_text = f"Sena: {final_label}"
                     color = (0, 255, 0) if final_confidence >= config.CONFIDENCE_THRESHOLD else (0, 165, 255)
                 else:
-                    label_text = "Leyendo..."
+                    if raw_label in config.MOTION_CLASSES:
+                        label_text = "Esperando movimiento" if motion_clf else "Movimiento no disponible"
+                    else:
+                        label_text = "Leyendo..."
                     color = (0, 165, 255)
             else:
                 smoother.reset()

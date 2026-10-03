@@ -16,6 +16,9 @@ cámara en tiempo real.
 >    se está moviendo de verdad (≥ `MOTION_MIN_MOVEMENT`, umbral anti-falsos
 >    positivos). Analiza ~20 frames con punta del dedo, orientación de la mano
 >    y traslación de la muñeca (29 features).
+>    Las seis letras dinámicas requieren confirmación de este modelo; una
+>    postura quieta no basta. El modelo incluido usa trazos sintéticos y debe
+>    validarse con capturas reales antes de atribuirle precisión con personas.
 >
 > **Para capturar datos de movimiento:** usa `python src/collect_data.py --person Nombre --motion`
 > y sigue las instrucciones de trazo abajo. Se recomiendan ~30-50 secuencias por letra.

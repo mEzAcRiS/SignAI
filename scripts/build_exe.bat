@@ -22,7 +22,7 @@ if exist "models\motion_model.joblib" (
     echo      Modelo de movimiento encontrado.
     set ADD_MOTION=--add-data "models\motion_model.joblib;models"
 ) else (
-    echo      No existe models\motion_model.joblib - opcional: las 6 letras dinamicas usaran solo postura estatica.
+    echo      No existe models\motion_model.joblib - las 6 letras dinamicas no se confirmaran.
 )
 
 echo [2/3] Verificando modelo de landmarks...

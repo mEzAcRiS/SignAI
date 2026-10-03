@@ -346,7 +346,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 for p in collected:
                     print(f"  - {p.name}")
-                merge_motion_csvs(collected, data_path)
+                try:
+                    merge_motion_csvs(collected, data_path)
+                except ValueError as exc:
+                    print(f"ERROR de dataset de movimiento: {exc}", file=sys.stderr)
+                    return 1
                 print(f"Dataset de movimiento creado: {data_path}")
             else:
                 # Respaldo: datos sinteticos (igual que el clasificador

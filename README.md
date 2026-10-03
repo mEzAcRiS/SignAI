@@ -13,7 +13,8 @@ confianza y esqueleto dibujado.
 > **clasificador de segundo nivel (SVM)** que analiza la trayectoria de la
 > mano (~20 frames: punta del dedo, orientación y traslación de la muñeca)
 > **solo cuando hay movimiento real ≥ umbral** (`MOTION_MIN_MOVEMENT`),
-> evitando falsos positivos con la mano quieta. Ver
+> y exige una predicción dinámica con confianza suficiente para confirmar esas
+> letras. Una postura estática por sí sola no las confirma. Ver
 > `docs/abecedario_lsm.md` para los trazos y la guía de captura.
 
 | | |
@@ -160,8 +161,24 @@ sintéticos de `data/samples/motion_landmarks_sample.csv` (regenerables con
 
 El modelo se guarda en `models/motion_model.joblib` y la app lo usa en
 tiempo real cuando la etiqueta estática es candidata (**J, K, Ñ, Q, X, Z,
-I, N o G**) **y** la mano se está moviendo de verdad; si no, manda el
-clasificador estático.
+I, N o G**) **y** la mano supera el umbral de movimiento. Las seis letras
+dinámicas solo se muestran si ese modelo las confirma con confianza suficiente.
+Si falta el modelo, el movimiento es insuficiente o la predicción es poco
+confiable, una postura dinámica queda pendiente; las letras estáticas siguen
+funcionando. Las alternativas marcadas como **Posturas** no son letras confirmadas.
+
+Las trayectorias reales y sintéticas usan la misma escala: una unidad es la
+distancia media muñeca–base del dedo medio durante la secuencia. Los tiempos
+son segundos relativos en `float64`, para conservar los intervalos entre frames.
+Los CSV y modelos de movimiento llevan `feature_version=2`. Las capturas antiguas
+sin esta versión deben repetirse: sus características guardadas no contienen
+la escala ni los tiempos originales necesarios para corregirlas. Los archivos
+incompatibles se rechazan sin mezclarlos con las nuevas capturas.
+
+El modelo incluido está entrenado con **datos sintéticos**; sus métricas solo
+evalúan esos datos. Para comprobar precisión con personas, captura secuencias
+reales, vuelve a entrenar y evalúa con personas o sesiones distintas de las
+usadas en el entrenamiento.
 
 ### 4.6 Ejecutable sin Python (`.exe`)
 
@@ -192,7 +209,7 @@ SignAI/
 │   ├── make_sample_data.py    # regenera los datos de prueba (estáticos)
 │   ├── make_sample_motion_data.py  # regenera los trazos sintéticos (J,K,Ñ,Q,X,Z)
 │   └── build_exe.bat          # construye el .exe (incluye motion_model.joblib)
-├── tests/                     # 84 pruebas automatizadas (pytest)
+├── tests/                     # pruebas automatizadas (pytest)
 │   ├── test_motion.py         # tests del módulo de movimiento (incl. umbral y gating)
 │   └── ...
 ├── models/                    # hand_landmarker.task + model.joblib + motion_model.joblib
@@ -210,13 +227,16 @@ SignAI/
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-**84 pruebas** (36 estáticas + 48 de movimiento/híbrido):
+La suite incluye pruebas estáticas, de movimiento y del flujo híbrido:
 - Normalización de landmarks, validación del dataset, entrenamiento estático
 - Predicción, suavizado de la app y modos sin cámara
 - MotionBuffer (sin filtro de letra: regresión I→J), features de trayectoria
   (29 = 23 + 6 de orientación/muñeca), **umbral de movimiento anti-falsos
   positivos**, gating `should_use_motion`, 6 clases dinámicas, merge de CSV
   y respaldo con datos sintéticos
+- Regresiones: letras dinámicas quietas, modelo ausente o con baja confianza,
+  letras confirmadas en pantalla y estadísticas, escalas de mano equivalentes,
+  relojes grandes y rechazo de formatos antiguos.
 
 ## 7. Créditos y licencias de las dependencias
 
