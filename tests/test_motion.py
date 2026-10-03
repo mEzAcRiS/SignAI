@@ -344,5 +344,97 @@ class TestMotionIntegration:
         assert features.shape == (config.MOTION_NUM_FEATURES,)
 
 
+class TestMotionMerge:
+    """Union de CSV estaticos y de movimiento (--merge y --motion)."""
+
+    @staticmethod
+    def _write_static_csv(path, n: int = 4):
+        from dataset import make_sample_row
+
+        rng = np.random.default_rng(0)
+        rows = [
+            make_sample_row(
+                rng.normal(0, 0.2, config.NUM_FEATURES),
+                label=config.CLASSES[i % len(config.CLASSES)],
+                person="T",
+            ).iloc[0]
+            for i in range(n)
+        ]
+        pd.DataFrame(rows).to_csv(path, index=False)
+
+    @staticmethod
+    def _write_motion_csv(path, n_per_class: int = 15):
+        rows = []
+        for label, base in (("J", 0.2), ("Z", 0.8)):
+            for i in range(n_per_class):
+                rng = np.random.default_rng(i)
+                feats = (base + rng.normal(0, 0.05, config.MOTION_NUM_FEATURES)).astype(
+                    np.float32
+                )
+                rows.append(make_motion_sample_row(feats, label, "T").iloc[0])
+        pd.DataFrame(rows).to_csv(path, index=False)
+
+    def test_do_merge_separa_estaticos_y_movimiento(self, tmp_path, capsys):
+        from collect_data import do_merge
+        from dataset import load_dataset
+
+        collected = tmp_path / "collected"
+        collected.mkdir()
+        self._write_static_csv(collected / "ana.csv")
+        self._write_motion_csv(collected / "ana_motion.csv")
+        (collected / "basura.csv").write_text("foo,bar\n1,2\n", encoding="utf-8")
+
+        out_static = tmp_path / "statico.csv"
+        out_motion = tmp_path / "movimiento.csv"
+        rc = do_merge(collected, out_static, motion_output=out_motion)
+        assert rc == 0
+
+        df = load_dataset(out_static)
+        assert len(df) == 4
+
+        mdf = load_motion_dataset(out_motion)
+        assert len(mdf) == 30
+        assert set(mdf["label"]) == {"J", "Z"}
+
+        out = capsys.readouterr().out
+        assert "basura.csv" in out  # ignorado con aviso de esquema desconocido
+
+    def test_do_merge_sin_archivos(self, tmp_path, capsys):
+        from collect_data import do_merge
+
+        rc = do_merge(tmp_path / "vacio", tmp_path / "out.csv")
+        assert rc == 1
+
+    def test_train_motion_auto_merge(self, monkeypatch, tmp_path):
+        """train.py --motion une los *_motion.csv si falta el dataset final."""
+        import train as train_mod
+
+        collected = tmp_path / "collected"
+        collected.mkdir()
+        self._write_motion_csv(collected / "ana_motion.csv")
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(config, "MOTION_DATASET_PATH", tmp_path / "motion_landmarks.csv")
+        model_out = tmp_path / "motion_model.joblib"
+
+        rc = train_mod.main(["--motion", "--motion-out", str(model_out)])
+        assert rc == 0
+        assert (tmp_path / "motion_landmarks.csv").exists()
+        assert model_out.exists()
+
+        mdf = load_motion_dataset(tmp_path / "motion_landmarks.csv")
+        assert len(mdf) == 30
+
+    def test_train_motion_sin_datos_devuelve_error(self, monkeypatch, tmp_path, capsys):
+        import train as train_mod
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)  # collected no existe
+        monkeypatch.setattr(config, "MOTION_DATASET_PATH", tmp_path / "falta.csv")
+
+        rc = train_mod.main(["--motion"])
+        assert rc == 1
+        assert "ERROR" in capsys.readouterr().out
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

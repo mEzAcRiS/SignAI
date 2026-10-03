@@ -130,11 +130,11 @@ Cada integrante genera `data/collected/<nombre>_motion.csv` con ~30-50 secuencia
 
 Unión de todos los CSV:
 ```powershell
-# Dataset estático (posturas)
+# Une los CSV estáticos de data/collected (y los de movimiento si existen):
 .\.venv\Scripts\python.exe src\collect_data.py --merge
 
-# Dataset de movimiento (trazos J/Z)
-# Se unen automáticamente al entrenar con --motion
+# El dataset de movimiento también se une solo la primera vez que
+# ejecutas: python src/train.py --motion
 ```
 
 ### 4.5 Entrenamiento

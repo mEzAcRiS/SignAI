@@ -49,7 +49,7 @@ from sklearn.svm import SVC
 
 import config
 from dataset import DatasetError, load_dataset, split_xy
-from motion import train_motion_model, load_motion_classifier
+from motion import train_motion_model, load_motion_classifier, find_motion_csvs, merge_motion_csvs
 
 
 # ----------------------------------------------------------------------
@@ -336,9 +336,22 @@ def main(argv: list[str] | None = None) -> int:
         # Entrenar modelo de movimiento
         data_path = Path(config.MOTION_DATASET_PATH)
         if not data_path.exists():
-            print(f"ERROR: no existe el dataset de movimiento '{data_path}'.")
-            print("Primero captura datos de movimiento con: python src/collect_data.py --person Nombre --motion")
-            return 1
+            # Auto-union: si los integrantes subieron sus *_motion.csv,
+            # se unen aqui la primera vez (README: "se unen automaticamente").
+            collected = find_motion_csvs(config.DATA_DIR / "collected")
+            if collected:
+                print(
+                    f"No existe {data_path}; uniendo {len(collected)} "
+                    "CSV de movimiento de data/collected:"
+                )
+                for p in collected:
+                    print(f"  - {p.name}")
+                merge_motion_csvs(collected, data_path)
+                print(f"Dataset de movimiento creado: {data_path}")
+            else:
+                print(f"ERROR: no existe el dataset de movimiento '{data_path}'.")
+                print("Primero captura datos de movimiento con: python src/collect_data.py --person Nombre --motion")
+                return 1
         try:
             train_motion_model(
                 data_path=data_path,

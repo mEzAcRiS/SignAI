@@ -4,8 +4,8 @@ Herramienta para que cada integrante capture sus muestras en su propia
 laptop y luego se unan todos los CSV con ``--merge``.
 
 Uso (en una laptop CON camara):
-    python src/collect_data.py --person Alan
-    python src/collect_data.py --person Alan --per-class 100 --interval 250
+    python src/collect_data.py --person Cristhian
+    python src/collect_data.py --person Cristhian --per-class 100 --interval 250
 
 Teclas (modo estatico):
     A-Z     = seleccionar la letra actual (se muestra como formarla)
@@ -14,7 +14,7 @@ Teclas (modo estatico):
     ESC     = guardar y salir
 
 Modo movimiento (para J y Z):
-    python src/collect_data.py --person Alan --motion
+    python src/collect_data.py --person Cristhian --motion
     Teclas: J/Z = seleccionar letra | ESPACIO = iniciar/parar trazo | M = cancelar | ESC = salir
 
 Union de todos los CSV en el dataset final:
@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 import cv2
+import pandas as pd
 
 import config
 from dataset import DatasetError, append_samples, make_sample_row, merge_csvs
@@ -38,8 +39,10 @@ from motion import (
     MotionBuffer,
     MOTION_BUFFER_SIZE,
     MOTION_MIN_FRAMES,
+    MOTION_CSV_COLUMNS,
     extract_trajectory_features,
     make_motion_sample_row,
+    merge_motion_csvs,
     save_motion_samples,
     MOTION_FEATURE_COLUMNS,
 )
@@ -356,9 +359,19 @@ def _capture(detection, label: str, person: str, out_path: Path, counts: dict) -
 
 
 # ----------------------------------------------------------------------
-def do_merge(out_dir: str | Path, output: str | Path) -> int:
-    """Une todos los CSV de data/collected en el dataset final."""
+def do_merge(
+    out_dir: str | Path,
+    output: str | Path,
+    motion_output: str | Path | None = None,
+) -> int:
+    """Une todos los CSV de data/collected en los datasets finales.
+
+    Clasifica cada CSV por su esquema: los estaticos (63 features) van a
+    ``output`` y los de movimiento (m0..m19, J/Z) a ``motion_output``.
+    Los archivos que no coinciden con ninguno se ignoran con aviso.
+    """
     out_dir = Path(out_dir)
+    motion_output = Path(motion_output or config.MOTION_DATASET_PATH)
     paths = sorted(out_dir.glob("*.csv"))
     if not paths:
         print(
@@ -367,13 +380,51 @@ def do_merge(out_dir: str | Path, output: str | Path) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"Uniendo {len(paths)} archivo(s):")
+
+    static_paths: list[Path] = []
+    motion_paths: list[Path] = []
+    skipped: list[Path] = []
     for p in paths:
-        print(f"  - {p.name}")
-    df = merge_csvs(paths, output)
-    print(f"Dataset final: {output} ({len(df)} muestras)")
-    counts = df[config.LABEL_COLUMN].value_counts().sort_index()
-    print(counts.to_string())
+        try:
+            cols = set(pd.read_csv(p, nrows=0).columns)
+        except Exception:
+            skipped.append(p)
+            continue
+        if set(config.FEATURE_COLUMNS) <= cols:
+            static_paths.append(p)
+        elif set(MOTION_CSV_COLUMNS) <= cols:
+            motion_paths.append(p)
+        else:
+            skipped.append(p)
+
+    if skipped:
+        print(f"CSV ignorados (esquema desconocido): {len(skipped)}")
+        for p in skipped:
+            print(f"  - {p.name}")
+
+    ok = False
+    if static_paths:
+        print(f"Uniendo {len(static_paths)} CSV estaticos:")
+        for p in static_paths:
+            print(f"  - {p.name}")
+        df = merge_csvs(static_paths, output)
+        print(f"Dataset estatico final: {output} ({len(df)} muestras)")
+        counts = df[config.LABEL_COLUMN].value_counts().sort_index()
+        print(counts.to_string())
+        ok = True
+
+    if motion_paths:
+        print(f"Uniendo {len(motion_paths)} CSV de movimiento (J/Z):")
+        for p in motion_paths:
+            print(f"  - {p.name}")
+        mdf = merge_motion_csvs(motion_paths, motion_output)
+        print(f"Dataset de movimiento final: {motion_output} ({len(mdf)} muestras)")
+        ok = True
+
+    if not ok:
+        print("No se encontro ningun CSV valido para unir.", file=sys.stderr)
+        return 1
+    print("Siguiente paso: python src/train.py  (y --motion si hubo trazos)")
     return 0
 
 

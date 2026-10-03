@@ -446,6 +446,49 @@ def load_motion_dataset(path: str | Path = config.MOTION_DATASET_PATH) -> pd.Dat
     return df
 
 
+def is_motion_csv(path: str | Path) -> bool:
+    """Detecta si un CSV tiene el esquema de movimiento (columnas m0..m19)."""
+    path = Path(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        cols = set(pd.read_csv(path, nrows=0).columns)
+    except Exception:
+        return False
+    return set(MOTION_CSV_COLUMNS) <= cols
+
+
+def find_motion_csvs(out_dir: str | Path) -> list[Path]:
+    """Devuelve los CSV de movimiento de una carpeta (ignora los estaticos)."""
+    out_dir = Path(out_dir)
+    if not out_dir.exists():
+        return []
+    return [p for p in sorted(out_dir.glob("*.csv")) if is_motion_csv(p)]
+
+
+def merge_motion_csvs(
+    paths: list[str | Path],
+    output: str | Path = config.MOTION_DATASET_PATH,
+) -> pd.DataFrame:
+    """Une varios CSV de movimiento en el dataset de movimiento final.
+
+    Valida el esquema de cada archivo y las etiquetas (solo J/Z) antes
+    de guardar; devuelve el dataset ya validado.
+    """
+    if not paths:
+        raise ValueError("No hay CSV de movimiento para unir.")
+    frames = []
+    for p in paths:
+        if not is_motion_csv(p):
+            raise ValueError(f"'{Path(p).name}' no es un CSV de movimiento.")
+        frames.append(pd.read_csv(p))
+    combined = pd.concat(frames, ignore_index=True)
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(output, index=False)
+    return load_motion_dataset(output)
+
+
 def split_motion_xy(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """Separa el dataset de movimiento en X (features) e y (labels)."""
     X = df[MOTION_FEATURE_COLUMNS].to_numpy(dtype=np.float32)
