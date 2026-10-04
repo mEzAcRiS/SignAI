@@ -1,11 +1,17 @@
 {
+<<<<<<< HEAD
   "cv_accuracy_mean": 0.9964912280701753,
   "cv_accuracy_std": 0.004297350425935414,
+=======
+  "cv_accuracy_mean": 0.9982142857142857,
+  "cv_accuracy_std": 0.0035714285714285587,
+>>>>>>> 7d9f37f22dd187ba80ac518fe1a9cc6859782694
   "test_accuracy": 1.0,
   "test_f1_macro": 1.0,
   "all_models": {
     "rf": {
       "nombre": "Random Forest",
+<<<<<<< HEAD
       "cv_accuracy_mean": 0.9964912280701753,
       "cv_accuracy_std": 0.004297350425935414,
       "test_accuracy": 1.0,
@@ -27,11 +33,35 @@
       "test_accuracy": 1.0,
       "test_f1_macro": 1.0,
       "train_seconds": 0.93
+=======
+      "cv_accuracy_mean": 0.9982142857142857,
+      "cv_accuracy_std": 0.0035714285714285587,
+      "test_accuracy": 1.0,
+      "test_f1_macro": 1.0,
+      "train_seconds": 1.13
+    },
+    "svm": {
+      "nombre": "SVM (RBF)",
+      "cv_accuracy_mean": 0.9964285714285716,
+      "cv_accuracy_std": 0.004374088826398517,
+      "test_accuracy": 1.0,
+      "test_f1_macro": 1.0,
+      "train_seconds": 0.24
+    },
+    "mlp": {
+      "nombre": "MLP (red neuronal)",
+      "cv_accuracy_mean": 0.9982142857142857,
+      "cv_accuracy_std": 0.0035714285714285587,
+      "test_accuracy": 1.0,
+      "test_f1_macro": 1.0,
+      "train_seconds": 0.73
+>>>>>>> 7d9f37f22dd187ba80ac518fe1a9cc6859782694
     }
   },
   "confusion_matrix": {
     "labels": [
       "C",
+<<<<<<< HEAD
       "O",
       "P",
       "R",
@@ -40,30 +70,46 @@
     "matrix": [
       [
         20,
-        0,
-        0,
-        0,
-        0
-      ],
+=======
+      "D",
+      "E"
+    ],
+    "matrix": [
       [
-        0,
-        30,
-        0,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        30,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
         31,
+>>>>>>> 7d9f37f22dd187ba80ac518fe1a9cc6859782694
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        30,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+<<<<<<< HEAD
+        30,
+=======
+        20,
+>>>>>>> 7d9f37f22dd187ba80ac518fe1a9cc6859782694
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+<<<<<<< HEAD
+        31,
+=======
+        30,
+>>>>>>> 7d9f37f22dd187ba80ac518fe1a9cc6859782694
         0
       ],
       [
@@ -71,9 +117,17 @@
         0,
         0,
         0,
+<<<<<<< HEAD
         32
       ]
     ]
   },
   "classification_report": "              precision    recall  f1-score   support\n\n           C      1.000     1.000     1.000        20\n           O      1.000     1.000     1.000        30\n           P      1.000     1.000     1.000        30\n           R      1.000     1.000     1.000        31\n           S      1.000     1.000     1.000        32\n\n    accuracy                          1.000       143\n   macro avg      1.000     1.000     1.000       143\nweighted avg      1.000     1.000     1.000       143\n"
+=======
+        30
+      ]
+    ]
+  },
+  "classification_report": "              precision    recall  f1-score   support\n\n           A      1.000     1.000     1.000        31\n           B      1.000     1.000     1.000        30\n           C      1.000     1.000     1.000        20\n           D      1.000     1.000     1.000        30\n           E      1.000     1.000     1.000        30\n\n    accuracy                          1.000       141\n   macro avg      1.000     1.000     1.000       141\nweighted avg      1.000     1.000     1.000       141\n"
+>>>>>>> 7d9f37f22dd187ba80ac518fe1a9cc6859782694
 }
