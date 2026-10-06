@@ -65,8 +65,11 @@ cerca o lejos, en cualquier posición de la imagen y con cualquier tamaño**.
 
 1. Descargar `Setup_SignAI_1.0.0.exe` (releases del repo o carpeta `dist/`).
 2. Doble clic → Siguiente → Siguiente → Instalar. No requiere administrador:
-   se instala en `%LOCALAPPDATA%\Programs\SignAI` y crea acceso directo en el
-   Escritorio (opcional).
+   se instala en `%LOCALAPPDATA%\Programs\SignAI` y crea estos accesos
+   directos (en el Menú Inicio y, si se marca la casilla, en el Escritorio):
+   - **SignAI** — tiempo real con la cámara
+   - **SignAI - imagen de prueba** — sin cámara: analiza una foto incluida
+   - **SignAI - verificar CSV** — sin cámara: imprime la exactitud en consola
 3. Para desinstalar: *Agregar o quitar programas* → **SignAI**, o el acceso
    directo *Desinstalar SignAI* del Menú Inicio.
 
@@ -207,12 +210,16 @@ scripts\build_exe.bat
 dist\SignAI\SignAI.exe --demo-image data\samples\hand_test.jpg
 ```
 
-Instalador de un solo archivo (Inno Setup 6, ~125 MB):
+Instalador de un solo archivo (Inno Setup 6, ~126 MB):
 
 ```powershell
 scripts\build_installer.bat
 dist\Setup_SignAI_1.0.0.exe
 ```
+
+El instalador incluye `data/hand_landmarks.csv` (2.5 MB) para que el atajo
+*SignAI - verificar CSV* funcione sin archivos extra, y crea accesos directos
+a los tres modos (cámara, imagen de prueba y verificación por CSV).
 
 ## 5. Estructura del proyecto
 

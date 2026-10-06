@@ -44,11 +44,17 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\SignAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; dataset de verificacion para el atajo "verificar CSV" (2.5 MB)
+Source: "..\data\hand_landmarks.csv"; DestDir: "{app}\data"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName} - imagen de prueba"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--demo-image ""_internal\data\samples\hand_test.jpg"""; WorkingDir: "{app}"
+Name: "{group}\{#MyAppName} - verificar CSV"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--csv ""data\hand_landmarks.csv"""; WorkingDir: "{app}"
 Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName} - imagen de prueba"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--demo-image ""_internal\data\samples\hand_test.jpg"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName} - verificar CSV"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--csv ""data\hand_landmarks.csv"""; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
