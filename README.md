@@ -61,6 +61,23 @@ cerca o lejos, en cualquier posición de la imagen y con cualquier tamaño**.
 
 ## 3. Instalación
 
+### Opción A — Usuario final (instalador, sin Python)
+
+1. Descargar `Setup_SignAI_1.0.0.exe` (releases del repo o carpeta `dist/`).
+2. Doble clic → Siguiente → Siguiente → Instalar. No requiere administrador:
+   se instala en `%LOCALAPPDATA%\Programs\SignAI` y crea acceso directo en el
+   Escritorio (opcional).
+3. Para desinstalar: *Agregar o quitar programas* → **SignAI**, o el acceso
+   directo *Desinstalar SignAI* del Menú Inicio.
+
+Para regenerar el instalador desde las fuentes (requiere Inno Setup 6):
+
+```powershell
+scripts\build_installer.bat    # usa dist\SignAI\ ya construido con build_exe.bat
+```
+
+### Opción B — Fuentes (Python)
+
 ```powershell
 git clone https://github.com/mEzAcRiS/SignAI.git
 cd SignAI
@@ -190,6 +207,13 @@ scripts\build_exe.bat
 dist\SignAI\SignAI.exe --demo-image data\samples\hand_test.jpg
 ```
 
+Instalador de un solo archivo (Inno Setup 6, ~125 MB):
+
+```powershell
+scripts\build_installer.bat
+dist\Setup_SignAI_1.0.0.exe
+```
+
 ## 5. Estructura del proyecto
 
 ```
@@ -211,7 +235,9 @@ SignAI/
 │   ├── download_model.py      # descarga el modelo de landmarks
 │   ├── make_sample_data.py    # regenera los datos de prueba (estáticos)
 │   ├── make_sample_motion_data.py  # regenera los trazos sintéticos (J,K,Ñ,Q,X,Z)
-│   └── build_exe.bat          # construye el .exe (incluye motion_model.joblib)
+│   ├── build_exe.bat          # construye el .exe (incluye motion_model.joblib)
+│   ├── SignAI.iss             # script del instalador (Inno Setup 6)
+│   └── build_installer.bat    # construye dist\Setup_SignAI_1.0.0.exe
 ├── tests/                     # pruebas automatizadas (pytest)
 │   ├── test_motion.py         # tests del módulo de movimiento (incl. umbral y gating)
 │   └── ...
