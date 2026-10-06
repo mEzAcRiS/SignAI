@@ -17,8 +17,9 @@ cámara en tiempo real.
 >    positivos). Analiza ~20 frames con punta del dedo, orientación de la mano
 >    y traslación de la muñeca (29 features).
 >    Las seis letras dinámicas requieren confirmación de este modelo; una
->    postura quieta no basta. El modelo incluido usa trazos sintéticos y debe
->    validarse con capturas reales antes de atribuirle precisión con personas.
+>    postura quieta no basta. El modelo incluido está entrenado con **458
+>    trazos reales** del equipo (95.7% de prueba); valida con personas
+>    distintas a las del entrenamiento antes de atribuirle precisión.
 >
 > **Para capturar datos de movimiento:** usa `python src/collect_data.py --person Nombre --motion`
 > y sigue las instrucciones de trazo abajo. Se recomiendan ~30-50 secuencias por letra.

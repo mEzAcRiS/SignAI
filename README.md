@@ -105,7 +105,7 @@ Teclas: **ESC** salir · **P** pausa · **S** guardar captura.
 .\.venv\Scripts\python.exe src\app.py --demo video.mp4
 
 # Sobre un CSV de características (solo consola)
-.\.venv\Scripts\python.exe src\app.py --csv data\samples\hand_landmarks_sample.csv
+.\.venv\Scripts\python.exe src\app.py --csv data\hand_landmarks.csv
 
 # Sin ventanas (solo consola, útil para pruebas remotas)
 .\.venv\Scripts\python.exe src\app.py --demo-image data\samples\hand_test.jpg --no-gui
@@ -175,10 +175,13 @@ sin esta versión deben repetirse: sus características guardadas no contienen
 la escala ni los tiempos originales necesarios para corregirlas. Los archivos
 incompatibles se rechazan sin mezclarlos con las nuevas capturas.
 
-El modelo incluido está entrenado con **datos sintéticos**; sus métricas solo
-evalúan esos datos. Para comprobar precisión con personas, captura secuencias
-reales, vuelve a entrenar y evalúa con personas o sesiones distintas de las
-usadas en el entrenamiento.
+El modelo incluido está entrenado con **capturas reales del equipo**
+(`data/hand_landmarks.csv`: 3621 muestras, 26 letras) y obtiene **95.0%** en
+su partición de prueba (98.1% sobre todo el dataset). El clasificador de
+movimiento también usa datos reales: **458 trazos** (J, K, Ñ, Q, X, Z) con
+**95.7%** de prueba. Los datos sintéticos de `data/samples/` solo se usan como
+respaldo si faltan capturas. Para comprobar precisión con personas, evalúa
+con personas o sesiones distintas de las usadas en el entrenamiento.
 
 ### 4.6 Ejecutable sin Python (`.exe`)
 

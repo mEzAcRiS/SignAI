@@ -94,8 +94,11 @@ def test_predict_image_inexistente():
     assert predict_image("no_existe.jpg", show=False, save=False) is None
 
 
-def test_predict_csv(sample_dataset, trained_bundle):
-    accuracy = predict_csv(sample_dataset)
+def test_predict_csv(trained_bundle):
+    """El pipeline CSV debe predecir bien sobre los datos reales del equipo."""
+    if not config.DATASET_PATH.exists():
+        pytest.skip("dataset real (data/hand_landmarks.csv) no disponible")
+    accuracy = predict_csv(config.DATASET_PATH)
     assert accuracy >= 0.8
 
 
